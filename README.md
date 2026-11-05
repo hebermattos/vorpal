@@ -69,6 +69,18 @@ Ao retomar, a configuração da arquitetura deve ser idêntica. O checkpoint rec
 
 Checkpoints antigos `checkpoints/latest.pt` **não são compatíveis** com Keras e **não são convertidos** automaticamente. Preserve backups dos checkpoints antigos e execute novo treinamento, sem usar `--resume` na primeira execução TensorFlow. Os importadores, o corpus e `data/*.bin` continuam compatíveis.
 
+
+## Scanners de segurança (opcional)
+
+Vorpal agora possui um CLI isolado para executar **Naabu, RustScan, Nuclei, httpx (ProjectDiscovery) e arp-scan**, desde que as ferramentas já estejam instaladas no sistema. Confirme autorização para cada alvo usando `--authorized`:
+
+```bash
+python src/network_scanners.py naabu 192.168.1.10 --authorized
+python src/network_scanners.py httpx http://192.168.1.10 --authorized
+```
+
+Os relatórios JSON são gravados em `scans/` (ignorado pelo Git) e **não entram automaticamente no corpus de treinamento**. Os testes executam com mocks, sem scans reais. Consulte [instalação, suporte, exemplos, limites e cuidados de segurança](docs/network-scanners.md).
+
 ## Testes
 
 ```bash

@@ -8,3 +8,4 @@ checkpoints/
 *.weights.h5
 corpus/imported/
 .pytest_cache/
+scans/
