@@ -1,23 +1,34 @@
+"""Generate UTF-8 text from Vorpal's trained Keras model."""
 import argparse
-import torch
-from model import TinyCodeGPT
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from model import as_inputs, configure_cpu
 
-p=argparse.ArgumentParser()
-p.add_argument('--prompt',default='def validate_input(')
-p.add_argument('--max-new',type=int,default=160)
-p.add_argument('--temperature',type=float,default=.8)
-p.add_argument('--threads',type=int,default=4)
-a=p.parse_args()
-if not (0 < a.temperature <= 2): p.error('temperature deve estar em (0,2]')
-torch.set_num_threads(a.threads)
-state=torch.load('checkpoints/latest.pt',map_location='cpu',weights_only=True)
-m=TinyCodeGPT(**state['config']); m.load_state_dict(state['model']); m.eval()
-seq=list(a.prompt.encode('utf8'))
-if not seq: seq=[10]
-with torch.inference_mode():
-    for _ in range(a.max_new):
-        x=torch.tensor([seq[-m.context:]],dtype=torch.long)
-        logits,_=m(x)
-        probs=torch.softmax(logits[0,-1]/a.temperature,dim=-1)
-        seq.append(int(torch.multinomial(probs,1).item()))
-print(bytes(seq).decode('utf8',errors='replace'))
+def generate(model, prompt, max_new=160, temperature=0.8, seed=42):
+    if not 0 < temperature <= 2:
+        raise ValueError("temperature must be in (0,2]")
+    context = model.get_layer("position_embedding").input_dim
+    seq = list(prompt.encode("utf-8")) or [10]
+    rng = np.random.default_rng(seed)
+    for _ in range(max_new):
+        batch = np.array([seq[-context:]], dtype=np.int32)
+        logits = model(as_inputs(batch), training=False).numpy()[0, -1] / temperature
+        probs = tf.nn.softmax(logits).numpy()
+        seq.append(int(rng.choice(256, p=probs)))
+    return bytes(seq).decode("utf-8", errors="replace")
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--prompt", default="def validate_input(")
+    p.add_argument("--max-new", type=int, default=160)
+    p.add_argument("--temperature", type=float, default=0.8)
+    p.add_argument("--threads", type=int, default=4)
+    p.add_argument("--checkpoint", default="checkpoints/latest.keras")
+    args = p.parse_args()
+    configure_cpu(args.threads)
+    model = keras.models.load_model(args.checkpoint, compile=False)
+    print(generate(model, args.prompt, args.max_new, args.temperature))
+
+if __name__ == "__main__":
+    main()
