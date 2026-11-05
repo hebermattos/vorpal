@@ -4,5 +4,7 @@ __pycache__/
 data/
 checkpoints/
 *.pt
+*.keras
+*.weights.h5
 corpus/imported/
 .pytest_cache/
