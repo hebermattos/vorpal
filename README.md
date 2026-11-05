@@ -84,3 +84,45 @@ python src/train.py --steps 500 --batch 8 --threads 4
 O importador aceita apenas HTTP(S) e textos/HTML/JSON/XML de até 2 MB por URL, bloqueia URLs com credenciais, portas não convencionais e endereços resolvidos como privados/locais, e valida redirecionamentos. Não segue links internos de uma página, não executa JavaScript e não baixa PDFs. A proteção de DNS é apenas uma verificação preventiva; para URLs não confiáveis, execute em ambiente isolado com restrições de rede (o DNS pode mudar entre verificação e conexão).
 
 Evite importar dados protegidos, documentos privados ou material sem licença/permissão de uso. Importar uma página não confirma que ela pode ser utilizada para treinamento.
+
+
+## Importação multiformato
+
+Use `src/import_dataset.py` para importar arquivos locais, diretórios e links públicos:
+
+```bash
+python src/import_dataset.py --file ./relatorio.pdf
+python src/import_dataset.py --file ./projeto.zip
+python src/import_dataset.py --directory ./projeto
+python src/import_dataset.py --url https://example.org/guia.pdf
+python src/data.py --corpus corpus --out data
+python src/train.py --steps 500
+```
+
+| Grupo | Extensões |
+|---|---|
+| Código-fonte | `.py`, `.js`, `.jsx`, `.ts`, `.tsx`, `.java`, `.kt`, `.kts`, `.go`, `.rs`, `.c`, `.h`, `.cpp`, `.hpp`, `.cs`, `.sh`, `.nse` |
+| Documentação | `.txt`, `.md`, `.rst`, `.html`, `.htm`, `.pdf`, `.docx` |
+| Dados estruturados | `.json`, `.jsonl`, `.csv`, `.xml`, `.toml`, `.yaml`, `.yml` |
+| Segurança | `.sarif`, `.nessus`, `.har`, `.nse`, `.yaml` |
+| Projetos compactados | `.zip`, `.tar.gz`, `.tgz` |
+
+PDF: extração de texto com `pypdf`, sem OCR. DOCX: `python-docx`. XML, CSV, SARIF, HAR e outros formatos são representados como texto, sem análise semântica específica.
+
+### Validação e segurança
+
+- Revise licença, autorização e conteúdos sensíveis antes de treinar. Filtros de segredos são heurísticos.
+- O importador não executa scripts, macros ou comandos, não segue links dentro de páginas e não faz clonagem automática de repositórios.
+- Limite de 8 MiB por fonte, 100 entradas por arquivo compactado e 16 MiB descompactados, além de verificação de taxa de expansão ZIP/DOCX.
+- Links simbólicos, caminhos absolutos, `..` e entradas especiais em arquivos compactados são bloqueados.
+- O conteúdo normalizado fica em `corpus/imported/`, ignorado pelo Git. `import_report.json` contém o relatório e não é usado no treinamento.
+- O importador de URL verifica IPs privados/locais, mas a checagem DNS não elimina todas as possibilidades de DNS rebinding. Use isolamento de rede para links não confiáveis.
+- Extração de PDFs/DOCX maliciosos ainda pode consumir recursos excessivos. Prefira executar em contêiner limitado.
+
+### Testes
+
+```bash
+python -m unittest discover -s tests -p 'test_import*.py' -v
+```
+
+O workflow `.github/workflows/import-tests.yml` testa importação e sintaxe no GitHub Actions.
