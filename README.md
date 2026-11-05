@@ -126,3 +126,44 @@ python -m unittest discover -s tests -p 'test_import*.py' -v
 ```
 
 O workflow `.github/workflows/import-tests.yml` testa importação e sintaxe no GitHub Actions.
+
+### Importar uma pasta inteira com lista de URLs
+
+Crie um arquivo chamado exatamente `url` (sem extensão) dentro da pasta que será importada:
+
+```text
+meus-dados/
+├── codigo.py
+├── guia.pdf
+├── exemplos/
+│   ├── notas.md
+│   └── url
+└── url
+```
+
+Cada arquivo `url` deve conter **uma URL HTTP(S) por linha**, codificada em UTF-8. Linhas vazias e linhas começando por `#` são ignoradas:
+
+```text
+# Documentação autorizada
+https://docs.python.org/3/library/secrets.html
+https://example.org/guia.pdf
+```
+
+Execute:
+
+```bash
+python src/import_dataset.py --directory ./meus-dados
+```
+
+O comando percorre as subpastas, importa os documentos locais suportados e baixa os endereços de todos os arquivos `url` encontrados. URLs idênticas são processadas uma vez por execução. URLs inválidas e downloads com erro são registrados em `corpus/imported/import_report.json`, sem impedir os demais itens. Os próprios arquivos `url` **não** entram no treinamento.
+
+Limites adicionais: até 100 URLs não comentadas por arquivo `url`, 250 URLs por execução, 64 KiB por arquivo de lista e 4.096 caracteres por URL. Downloads continuam sujeitos às verificações de endereço público e ao limite de 8 MiB.
+
+Antes do treinamento, revise os arquivos gerados, suas licenças e possíveis dados pessoais ou credenciais:
+
+```bash
+python src/data.py --corpus corpus --out data
+python src/train.py --steps 500
+```
+
+**Nota de segurança:** não importe listas de URLs de origem não confiável em uma máquina com acesso a redes sensíveis. A verificação preventiva de DNS não é uma garantia completa contra redirecionamento ou DNS rebinding.

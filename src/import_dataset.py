@@ -22,6 +22,10 @@ MAX_MEMBERS = 100
 MAX_RATIO = 100
 MAX_PAGES = 100
 MAX_REDIRECTS = 3
+MAX_URLS_PER_FOLDER = 100
+MAX_URLS_TOTAL = 250
+MAX_URL_LIST_BYTES = 64 * 1024
+MAX_URL_LENGTH = 4096
 
 CODE = {'.py', '.js', '.jsx', '.ts', '.tsx', '.java', '.kt', '.kts',
         '.go', '.rs', '.c', '.h', '.cpp', '.hpp', '.cs', '.sh', '.nse'}
@@ -262,6 +266,66 @@ def import_one(name, raw, provenance, out):
             rejected.append({'member': entry_name, 'reason': str(exc)})
     return accepted, rejected
 
+def collect_directory(root):
+    """Collect supported local files plus URLs from any file named exactly 'url'.
+
+    A URL list uses UTF-8, one URL per line; empty lines and # comments are ignored.
+    Failures are recorded per line without interrupting other files or URLs.
+    """
+    root = Path(root)
+    if not root.is_dir() or root.is_symlink():
+        raise ExtractError('diretório não encontrado ou link simbólico')
+    sources, rejected, seen_urls = [], [], set()
+    total_urls = 0
+    for path in sorted(root.rglob('*')):
+        relative = path.relative_to(root)
+        if any(part in SKIP_DIRS for part in relative.parts) or path.is_symlink():
+            continue
+        if not path.is_file():
+            continue
+        if path.name == 'url':
+            if path.stat().st_size > MAX_URL_LIST_BYTES:
+                rejected.append({'source': str(path), 'reason': 'lista URL maior que 64 KiB'})
+                continue
+            try:
+                lines = path.read_text(encoding='utf-8-sig').splitlines()
+            except (UnicodeError, OSError) as exc:
+                rejected.append({'source': str(path), 'reason': f'lista URL ilegível: {exc}'})
+                continue
+            count = 0
+            for line_no, raw_line in enumerate(lines, start=1):
+                url = raw_line.strip()
+                if not url or url.startswith('#'):
+                    continue
+                count += 1
+                source = f'{path}:{line_no}'
+                if count > MAX_URLS_PER_FOLDER or total_urls >= MAX_URLS_TOTAL:
+                    rejected.append({'source': source, 'reason': 'limite de URLs excedido'})
+                    continue
+                total_urls += 1
+                if len(url) > MAX_URL_LENGTH:
+                    rejected.append({'source': source, 'reason': 'URL longa demais'})
+                    continue
+                if url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                try:
+                    name, raw, final_url = fetch_url(url)
+                    sources.append((name, raw, final_url))
+                except (ExtractError, ValueError, urllib.error.URLError, OSError) as exc:
+                    rejected.append({'source': source, 'url': url, 'reason': str(exc)})
+            continue
+        if classify(path.name) not in SUPPORTED | {'zip', 'tar'}:
+            continue
+        try:
+            if path.stat().st_size > MAX_FILE:
+                rejected.append({'source': str(path), 'reason': 'arquivo maior que 8 MiB'})
+                continue
+            sources.append((path.name, path.read_bytes(), str(path)))
+        except OSError as exc:
+            rejected.append({'source': str(path), 'reason': str(exc)})
+    return sources, rejected
+
 def main():
     p = argparse.ArgumentParser(description='Importar arquivos locais, diretórios, URL, ZIP e TAR.GZ para o corpus do Vorpal')
     group = p.add_mutually_exclusive_group(required=True)
@@ -272,6 +336,7 @@ def main():
     args = p.parse_args()
     output = Path(args.out)
     sources = []
+    rejected = []
     try:
         if args.url:
             name, raw, url = fetch_url(args.url)
@@ -282,21 +347,8 @@ def main():
                 raise ExtractError('arquivo inválido, link simbólico ou maior que 8 MiB')
             sources = [(path.name, path.read_bytes(), str(path))]
         else:
-            root = Path(args.directory)
-            if not root.is_dir():
-                raise ExtractError('diretório não encontrado')
-            for path in sorted(root.rglob('*')):
-                relative = path.relative_to(root)
-                if any(part in SKIP_DIRS for part in relative.parts):
-                    continue
-                if path.is_symlink():
-                    continue
-                if not path.is_file() or path.stat().st_size > MAX_FILE:
-                    continue
-                if classify(path.name) not in SUPPORTED | {'zip', 'tar'}:
-                    continue
-                sources.append((path.name, path.read_bytes(), str(path)))
-        accepted, rejected = [], []
+            sources, rejected = collect_directory(args.directory)
+        accepted = []
         for name, data, provenance in sources:
             if SENSITIVE.search(name):
                 rejected.append({'source': provenance, 'reason': 'nome potencialmente sensível'})
