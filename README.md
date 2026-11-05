@@ -65,3 +65,22 @@ A janela de contexto de 128 **bytes** é muito curta; o modelo gera bytes, não 
 Próximos passos: ampliar o corpus revisado, introduzir tokenização BPE, aumentar o contexto, acrescentar avaliação de código por testes e avaliações por CWE. Código produzido pelo modelo não deve ser executado automaticamente fora de um ambiente isolado.
 
 **Uso previsto:** pesquisa educacional e segurança defensiva em ambientes autorizados.
+
+## Importar dados de treinamento a partir de um link
+
+O Vorpal aceita uma URL pública de uma página HTML, arquivo Python ou documento de texto. **Não treina automaticamente ao receber o link**: primeiro importa o conteúdo para revisão manual.
+
+```bash
+python src/ingest_url.py "https://docs.python.org/3/library/secrets.html"
+```
+
+O arquivo de texto extraído é salvo em `corpus/imported/url_<hash>.txt`. A URL de origem fica no arquivo `.source` ao lado, para rastreabilidade. Abra e revise os arquivos (licença/permissões, conteúdo correto, segredos ou dados pessoais) antes de continuar:
+
+```bash
+python src/data.py --corpus corpus --out data
+python src/train.py --steps 500 --batch 8 --threads 4
+```
+
+O importador aceita apenas HTTP(S) e textos/HTML/JSON/XML de até 2 MB por URL, bloqueia URLs com credenciais, portas não convencionais e endereços resolvidos como privados/locais, e valida redirecionamentos. Não segue links internos de uma página, não executa JavaScript e não baixa PDFs. A proteção de DNS é apenas uma verificação preventiva; para URLs não confiáveis, execute em ambiente isolado com restrições de rede (o DNS pode mudar entre verificação e conexão).
+
+Evite importar dados protegidos, documentos privados ou material sem licença/permissão de uso. Importar uma página não confirma que ela pode ser utilizada para treinamento.
