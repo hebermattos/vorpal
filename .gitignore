@@ -4,3 +4,5 @@ __pycache__/
 data/
 checkpoints/
 *.pt
+corpus/imported/
+.pytest_cache/
