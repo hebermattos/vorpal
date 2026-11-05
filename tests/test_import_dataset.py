@@ -24,7 +24,7 @@ class ImportTests(unittest.TestCase):
             b'<NessusClientData_v2><Report>authorized scan result</Report></NessusClientData_v2>'))
 
     def test_documentation_and_structured_data(self):
-        html = b'<html><nav>ignore this</nav><h1>Safe development</h1><p>Always validate untrusted input.</p></html>'
+        html = b'<html><nav>ignore this</nav><h1>Safe development</h1><p>Always validate untrusted input and check authorization boundaries before processing requests.</p></html>'
         result=extract_text('guide.html',html)
         self.assertIn('Safe development',result)
         self.assertNotIn('ignore this',result)
