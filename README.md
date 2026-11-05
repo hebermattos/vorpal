@@ -1,169 +1,91 @@
-# Vorpal
+# Vorpal — IA local em TensorFlow/Keras
 
-**Vorpal** é um projeto experimental de IA local para estudos de programação segura e análise defensiva de vulnerabilidades, com treinamento **do zero** em CPU. Usa PyTorch, pesos inicializados aleatoriamente e um Transformer causal que prevê o próximo byte de texto UTF-8 (vocabulário fixo de 256 bytes).
+Vorpal é um projeto educacional de modelo autoregressivo **treinado do zero**, especializado experimentalmente em dados de programação e cibersegurança defensiva. O backend de treinamento e inferência é **TensorFlow/Keras na CPU**, sem PyTorch ou modelos pré-treinados.
 
-> **Estado:** protótipo educacional. O corpus de exemplo é muito pequeno; o modelo não é um assistente confiável de programação nem um detector de vulnerabilidades pronto para produção.
+> Protótipo de pesquisa: contexto de apenas 128 **bytes** por padrão e poucos parâmetros. Não é um detector confiável de vulnerabilidades e não substitui revisão de segurança.
 
-## Requisitos
+## Ambiente
 
-- Python 3.11+ em Linux ou WSL.
-- CPU (sem necessidade de GPU), recomendados 8 GB de RAM.
-- Modelo padrão: contexto de 128 bytes, 3 camadas, dimensão interna 96, 4 cabeças de atenção, batch 8.
-
-## Instalação
+- Python 3.11 recomendado (Linux/Ubuntu/WSL).
+- Somente CPU; recomendado cerca de 8 GB de RAM para o modelo padrão.
+- TensorFlow 2.16+ e Keras 3 via `tf.keras` (consulte `requirements.txt`).
+- Instalação limpa é recomendada durante a migração.
 
 ```bash
 git clone https://github.com/hebermattos/vorpal.git
 cd vorpal
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+python -m pip install -U pip
 python -m pip install -r requirements.txt
 ```
 
-Se necessário, consulte https://pytorch.org/get-started/locally/ para a instalação compatível com seu sistema.
+## Importação dos datasets — preservada
 
-## Treinamento, avaliação e geração
-
-```bash
-python src/data.py --corpus corpus --out data
-python src/train.py --steps 500 --batch 8 --threads 4
-python src/evaluate.py
-python src/generate.py --prompt 'def validate_port(' --max-new 160
-python -m unittest discover -s tests -v
-```
-
-Retomar treinamento a partir de `checkpoints/latest.pt` (padrão: salvo a cada 100 passos):
+O importador continua **independente do backend de treinamento** e aceita código-fonte (.py, .js, .ts, .java, .kt, .go, .rs, .c, .cpp, .sh, .nse), documentação (.pdf, .docx, .md, .rst, .html, .txt), dados (.json, .jsonl, .csv, .xml, .toml, .yaml) e arquivos de segurança (.sarif, .nessus, .har), inclusive projetos ZIP/TAR.GZ.
 
 ```bash
-python src/train.py --steps 1000 --resume
+python src/import_dataset.py --file ./documento.pdf
+python src/import_dataset.py --directory ./meus-dados
+python src/import_dataset.py --url https://example.org/documentation.html
 ```
 
-Os arquivos `data/`, `checkpoints/`, `*.pt`, ambientes virtuais e caches não são versionados.
+### Arquivos `url` nas pastas
 
-## Organização
-
-- `src/model.py`: Transformer causal em bytes, sem pesos previamente treinados.
-- `src/data.py`: deduplicação básica, filtro heurístico de segredos e divisão treino/validação por documento.
-- `src/train.py`: otimizador AdamW, backpropagation, clipping e checkpoints.
-- `src/evaluate.py`: loss e perplexidade por byte em dados de validação.
-- `src/generate.py`: geração local a partir de prompt.
-- `corpus/`: exemplos de documentação e Python seguro.
-- `tests/`: testes de forma de saída, gradientes e máscara causal.
-
-## Dataset
-
-Adicione arquivos `.py`, `.md`, `.txt`, `.json`, `.yml`, `.yaml` ou `.sh` ao diretório `corpus/`, **somente quando houver autorização e licença adequada**. Revise previamente cada arquivo: o filtro de segredos é heurístico e não garante que informações sensíveis sejam removidas.
-
-O pré-processamento remove documentos idênticos, pula determinados nomes/formatos de arquivos sensíveis e divide por documento para reduzir vazamento entre treino e validação. Um corpus substancial e avaliações por tarefa são necessários para qualquer resultado minimamente útil.
-
-## Limitações e roadmap
-
-A janela de contexto de 128 **bytes** é muito curta; o modelo gera bytes, não tokens BPE. A perplexidade por byte não mede capacidade de identificar falhas. O script de retomada não restaura o estado aleatório integral, portanto não é reproduzível bit a bit.
-
-Próximos passos: ampliar o corpus revisado, introduzir tokenização BPE, aumentar o contexto, acrescentar avaliação de código por testes e avaliações por CWE. Código produzido pelo modelo não deve ser executado automaticamente fora de um ambiente isolado.
-
-**Uso previsto:** pesquisa educacional e segurança defensiva em ambientes autorizados.
-
-## Importar dados de treinamento a partir de um link
-
-O Vorpal aceita uma URL pública de uma página HTML, arquivo Python ou documento de texto. **Não treina automaticamente ao receber o link**: primeiro importa o conteúdo para revisão manual.
-
-```bash
-python src/ingest_url.py "https://docs.python.org/3/library/secrets.html"
-```
-
-O arquivo de texto extraído é salvo em `corpus/imported/url_<hash>.txt`. A URL de origem fica no arquivo `.source` ao lado, para rastreabilidade. Abra e revise os arquivos (licença/permissões, conteúdo correto, segredos ou dados pessoais) antes de continuar:
-
-```bash
-python src/data.py --corpus corpus --out data
-python src/train.py --steps 500 --batch 8 --threads 4
-```
-
-O importador aceita apenas HTTP(S) e textos/HTML/JSON/XML de até 2 MB por URL, bloqueia URLs com credenciais, portas não convencionais e endereços resolvidos como privados/locais, e valida redirecionamentos. Não segue links internos de uma página, não executa JavaScript e não baixa PDFs. A proteção de DNS é apenas uma verificação preventiva; para URLs não confiáveis, execute em ambiente isolado com restrições de rede (o DNS pode mudar entre verificação e conexão).
-
-Evite importar dados protegidos, documentos privados ou material sem licença/permissão de uso. Importar uma página não confirma que ela pode ser utilizada para treinamento.
-
-
-## Importação multiformato
-
-Use `src/import_dataset.py` para importar arquivos locais, diretórios e links públicos:
-
-```bash
-python src/import_dataset.py --file ./relatorio.pdf
-python src/import_dataset.py --file ./projeto.zip
-python src/import_dataset.py --directory ./projeto
-python src/import_dataset.py --url https://example.org/guia.pdf
-python src/data.py --corpus corpus --out data
-python src/train.py --steps 500
-```
-
-| Grupo | Extensões |
-|---|---|
-| Código-fonte | `.py`, `.js`, `.jsx`, `.ts`, `.tsx`, `.java`, `.kt`, `.kts`, `.go`, `.rs`, `.c`, `.h`, `.cpp`, `.hpp`, `.cs`, `.sh`, `.nse` |
-| Documentação | `.txt`, `.md`, `.rst`, `.html`, `.htm`, `.pdf`, `.docx` |
-| Dados estruturados | `.json`, `.jsonl`, `.csv`, `.xml`, `.toml`, `.yaml`, `.yml` |
-| Segurança | `.sarif`, `.nessus`, `.har`, `.nse`, `.yaml` |
-| Projetos compactados | `.zip`, `.tar.gz`, `.tgz` |
-
-PDF: extração de texto com `pypdf`, sem OCR. DOCX: `python-docx`. XML, CSV, SARIF, HAR e outros formatos são representados como texto, sem análise semântica específica.
-
-### Validação e segurança
-
-- Revise licença, autorização e conteúdos sensíveis antes de treinar. Filtros de segredos são heurísticos.
-- O importador não executa scripts, macros ou comandos, não segue links dentro de páginas e não faz clonagem automática de repositórios.
-- Limite de 8 MiB por fonte, 100 entradas por arquivo compactado e 16 MiB descompactados, além de verificação de taxa de expansão ZIP/DOCX.
-- Links simbólicos, caminhos absolutos, `..` e entradas especiais em arquivos compactados são bloqueados.
-- O conteúdo normalizado fica em `corpus/imported/`, ignorado pelo Git. `import_report.json` contém o relatório e não é usado no treinamento.
-- O importador de URL verifica IPs privados/locais, mas a checagem DNS não elimina todas as possibilidades de DNS rebinding. Use isolamento de rede para links não confiáveis.
-- Extração de PDFs/DOCX maliciosos ainda pode consumir recursos excessivos. Prefira executar em contêiner limitado.
-
-### Testes
-
-```bash
-python -m unittest discover -s tests -p 'test_import*.py' -v
-```
-
-O workflow `.github/workflows/import-tests.yml` testa importação e sintaxe no GitHub Actions.
-
-### Importar uma pasta inteira com lista de URLs
-
-Crie um arquivo chamado exatamente `url` (sem extensão) dentro da pasta que será importada:
+Dentro de `./meus-dados` ou qualquer subpasta, coloque arquivo chamado exatamente **`url`** (sem extensão), UTF-8, com uma URL HTTP(S) pública por linha:
 
 ```text
-meus-dados/
-├── codigo.py
-├── guia.pdf
-├── exemplos/
-│   ├── notas.md
-│   └── url
-└── url
-```
-
-Cada arquivo `url` deve conter **uma URL HTTP(S) por linha**, codificada em UTF-8. Linhas vazias e linhas começando por `#` são ignoradas:
-
-```text
-# Documentação autorizada
+# documentação autorizada
 https://docs.python.org/3/library/secrets.html
 https://example.org/guia.pdf
 ```
 
-Execute:
+`--directory` importa documentos locais, arquivos compactados e URLs de todas as subpastas. URLs repetidas na mesma execução são desduplicadas. Falhas são registradas em `corpus/imported/import_report.json` sem interromper os demais downloads. O arquivo `url` não vira texto de treinamento.
 
-```bash
-python src/import_dataset.py --directory ./meus-dados
-```
+**Segurança:** valide licença e autorização, revise dados pessoais e segredos; os filtros são heurísticos. Limites: 8 MiB por arquivo, 100 URLs por lista e 250 por importação. O bloqueio de endereços privados por verificação DNS não elimina o risco de DNS rebinding; use isolamento de rede com fontes não confiáveis. Não há execução de conteúdo baixado ou OCR.
 
-O comando percorre as subpastas, importa os documentos locais suportados e baixa os endereços de todos os arquivos `url` encontrados. URLs idênticas são processadas uma vez por execução. URLs inválidas e downloads com erro são registrados em `corpus/imported/import_report.json`, sem impedir os demais itens. Os próprios arquivos `url` **não** entram no treinamento.
-
-Limites adicionais: até 100 URLs não comentadas por arquivo `url`, 250 URLs por execução, 64 KiB por arquivo de lista e 4.096 caracteres por URL. Downloads continuam sujeitos às verificações de endereço público e ao limite de 8 MiB.
-
-Antes do treinamento, revise os arquivos gerados, suas licenças e possíveis dados pessoais ou credenciais:
+## Preparar, treinar, avaliar e gerar
 
 ```bash
 python src/data.py --corpus corpus --out data
-python src/train.py --steps 500
+python src/train.py --steps 500 --batch 8 --threads 4
+python src/evaluate.py --samples 50 --threads 4
+python src/generate.py --prompt "def validate_port(" --max-new 160 --threads 4
 ```
 
-**Nota de segurança:** não importe listas de URLs de origem não confiável em uma máquina com acesso a redes sensíveis. A verificação preventiva de DNS não é uma garantia completa contra redirecionamento ou DNS rebinding.
+`src/data.py` prepara arquivos de texto e divide por documentos. Saídas `data/train.bin` e `data/valid.bin` mantêm o **mesmo formato de bytes anterior**. Treinamento ajusta pesos totalmente aleatórios, com tokenização de 256 bytes UTF-8, atenção causal, AdamW e clipping de gradiente.
+
+Arquitetura padrão: 3 blocos Transformer, largura 96, quatro cabeças de atenção, contexto de 128 bytes. Argumentos `--dim`, `--heads`, `--layers`, `--context`, `--batch` e `--steps` permitem reduzir consumo de CPU/RAM.
+
+O checkpoint fica em `checkpoints/latest.keras` (modelo e estado do otimizador) e `checkpoints/latest.json` (configuração e passo). Para continuar:
+
+```bash
+python src/train.py --steps 1000 --batch 8 --threads 4 --resume
+```
+
+Ao retomar, a configuração da arquitetura deve ser idêntica. O checkpoint recupera o estado do otimizador, mas o gerador aleatório de amostras não é restaurado bit a bit.
+
+### Migração de PyTorch
+
+Checkpoints antigos `checkpoints/latest.pt` **não são compatíveis** com Keras e **não são convertidos** automaticamente. Preserve backups dos checkpoints antigos e execute novo treinamento, sem usar `--resume` na primeira execução TensorFlow. Os importadores, o corpus e `data/*.bin` continuam compatíveis.
+
+## Testes
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Os testes verificam formatos e proteção da importação, máscara causal, formato das saídas, gradientes, salvamento e carregamento de modelo, geração de texto e um treinamento curto com retomada. Um workflow do GitHub Actions executa testes em CPU.
+
+## Organização
+
+- `src/import_dataset.py`, `src/ingest_url.py`: importação e validação de dados.
+- `src/data.py`: corpus textual e separação treino/validação.
+- `src/model.py`: Transformer causal TensorFlow/Keras.
+- `src/train.py`: treinamento e checkpoint.
+- `src/evaluate.py`: loss e perplexidade por byte.
+- `src/generate.py`: geração local.
+- `tests/`: testes unitários e de integração.
+- `corpus/`: exemplos didáticos.
+
+Os arquivos `corpus/imported/`, `data/` e `checkpoints/` são ignorados pelo Git. A perplexidade por byte **não mede** capacidade de análise de vulnerabilidades. Revise qualquer código gerado antes de executá-lo.
