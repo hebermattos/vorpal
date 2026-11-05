@@ -44,6 +44,11 @@ def validate_target(tool, target):
         if not valid_host(host):
             raise ScanError("Hostname inválido")
         return target
+    if tool == "rustscan":
+        try:
+            ipaddress.ip_address(target)
+        except ValueError as exc:
+            raise ScanError("RustScan exige IP individual para evitar interpretação como arquivo") from exc
     if tool == "arp-scan":
         try:
             address = ipaddress.ip_address(target)
@@ -82,7 +87,7 @@ def build_command(tool, target, interface=None):
         return ["naabu", "-host", target, "-json", "-rate", "100", "-silent"]
     if tool == "rustscan":
         # RustScan's default Nmap integration is avoided with --no-nmap.
-        return ["rustscan", "-a", target, "-b", "50", "--timeout", "1500", "--no-nmap"]
+        return ["rustscan", "-a", target, "-b", "50", "--timeout", "1500", "--no-config", "-g"]
     if tool == "nuclei":
         return ["nuclei", "-u", target, "-jsonl", "-rate-limit", "10", "-concurrency", "2", "-no-color", "-silent"]
     return ["httpx", "-u", target, "-json", "-rate-limit", "10", "-no-color", "-silent"]
