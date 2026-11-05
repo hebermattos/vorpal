@@ -1,0 +1,2 @@
+numpy>=1.26,<3
+# Instale torch CPU separadamente; veja README.md
