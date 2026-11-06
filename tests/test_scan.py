@@ -1,6 +1,4 @@
 import argparse
-import io
-import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 import shutil
@@ -9,52 +7,43 @@ import sys
 import tempfile
 import threading
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import scan
 
 
 class ScanTests(unittest.TestCase):
-    def test_retrieves_imported_text_and_preserves_exact_target(self):
+    @patch("scan.select_profile", return_value="http-head")
+    def test_retrieves_imported_text_and_preserves_exact_target(self, select):
         with tempfile.TemporaryDirectory() as directory:
             corpus = Path(directory)
             (corpus / "imported").mkdir()
             (corpus / "imported" / "manual.txt").write_text(
                 "Para cabeçalhos HTTP use curl HEAD", encoding="utf-8")
-            generate = Mock(return_value='{"profile":"http-head"}')
             target = "https://example.org/a/../{b,c}?x=1&y=2"
-            result = scan.plan("url", target, "Ver cabeçalhos", "local", corpus,
-                               generate=generate)
-        self.assertIn("curl HEAD", generate.call_args.args[1])
+            checkpoint = Path("custom.keras")
+            result = scan.plan("url", target, "Ver cabeçalhos", checkpoint, corpus)
+        select.assert_called_once_with(
+            checkpoint, "Ver cabeçalhos",
+            [{"source": "imported/manual.txt", "excerpt": "Para cabeçalhos HTTP use curl HEAD"}],
+            ("http-head", "http-get"), 4)
         self.assertEqual(result["references"], ["imported/manual.txt"])
         self.assertEqual(result["command"][-2:], ["--", target])
 
-    def test_rejects_model_attempts_to_supply_scope_command_or_options(self):
-        for response in ('[]', 'curl --location', '{"profile":"discover"}',
-                         '{"profile":"http-head","target":"https://other.example"}',
-                         '{"profile":"http-head","command":["sh"]}',
-                         '{"profile":"http-head --location"}', '{"profile":[]}'):
-            with self.subTest(response=response), self.assertRaises(scan.ScanError):
-                scan.plan("url", "https://example.org", "headers", "local",
-                          generate=Mock(return_value=response))
+    @patch("scan.select_profile", return_value="http-head --location")
+    def test_rejects_profile_outside_allowlist(self, select):
+        with self.assertRaisesRegex(scan.ScanError, "Perfil não permitido"):
+            scan.plan("url", "https://example.org", "headers")
 
-    @patch("scan.build_opener")
-    def test_model_request_uses_loopback_and_scope_specific_schema(self, build_opener):
-        opener = build_opener.return_value
-        opener.open.return_value = io.BytesIO(json.dumps({"response": '{"profile":"discover"}'}).encode())
-        result = scan.plan("lan", "192.168.1.0/24", "descobrir hosts", "local")
-        request = opener.open.call_args.args[0]
-        self.assertEqual(request.full_url, "http://127.0.0.1:11434/api/generate")
-        payload = json.loads(request.data)
-        self.assertFalse(payload["stream"])
-        self.assertEqual(payload["format"]["properties"]["profile"]["enum"],
-                         ["discover", "tcp-common"])
-        self.assertEqual(result["profile"], "discover")
-        self.assertIn("-sn", result["command"])
+    def test_missing_checkpoint_has_training_guidance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "missing.keras"
+            with self.assertRaisesRegex(scan.ScanError, "src/train.py"):
+                scan.plan("lan", "192.168.1.0/24", "descobrir hosts", missing)
 
-    def test_invalid_scope_stops_before_model(self):
-        generate = Mock()
+    @patch("scan.select_profile")
+    def test_invalid_scope_stops_before_model(self, select):
         for scope, target in (
             ("url", "file:///etc/passwd"), ("url", "https://u:p@example.org"),
             ("url", "https://example.org:65536"), ("url", "https://example.org/#"),
@@ -64,8 +53,8 @@ class ScanTests(unittest.TestCase):
             ("lan", "192.168.1.1"), ("lan", "192.168.1.0/255.255.255.0"),
         ):
             with self.subTest(target=target), self.assertRaises(scan.ScanError):
-                scan.plan(scope, target, "teste", "local", generate=generate)
-        generate.assert_not_called()
+                scan.plan(scope, target, "teste")
+        select.assert_not_called()
 
     @patch("scan.subprocess.run")
     def test_rebuilds_command_only_after_authorization_and_summarizes_ports(self, run):
@@ -86,7 +75,7 @@ class ScanTests(unittest.TestCase):
     @patch.object(argparse.ArgumentParser, "error", side_effect=SystemExit(2))
     @patch("scan.plan")
     def test_cli_requires_one_scope_and_authorization_before_planning(self, plan, error):
-        common = ["--goal", "teste", "--model", "local"]
+        common = ["--goal", "teste"]
         for extra in (["--url", "https://example.org", "--execute"],
                       ["--url", "https://example.org", "--lan", "192.168.1.0/24"], []):
             with self.assertRaises(SystemExit):

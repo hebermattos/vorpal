@@ -1,4 +1,6 @@
 """CPU-only Keras model and checkpoint smoke tests."""
+from contextlib import redirect_stdout
+from io import StringIO
 import json
 import os
 import sys
@@ -16,6 +18,7 @@ from tensorflow import keras
 from model import build_model, as_inputs
 from generate import generate
 from train import make_batch, run
+from scan import main as scan_main
 
 class ModelTests(unittest.TestCase):
     def test_output_and_training_gradient(self):
@@ -60,7 +63,7 @@ class ModelTests(unittest.TestCase):
                 os.chdir(directory)
                 Path("data").mkdir()
                 Path("data/train.bin").write_bytes(bytes(range(256)) * 2)
-                args = Namespace(context=12, dim=16, layers=1, heads=4,
+                args = Namespace(context=32, dim=16, layers=1, heads=4,
                                  dropout=0.0, batch=2, steps=1, threads=2,
                                  lr=0.001, seed=42, data="data/train.bin",
                                  resume=False)
@@ -73,6 +76,14 @@ class ModelTests(unittest.TestCase):
                 run(args)
                 meta = json.loads(Path("checkpoints/latest.json").read_text())
                 self.assertEqual(meta["step"], 2)
+                output = StringIO()
+                with redirect_stdout(output):
+                    self.assertEqual(scan_main(["--url", "https://example.org/login",
+                                               "--goal", "Ver os cabeçalhos HTTP"]), 0)
+                plan = json.loads(output.getvalue())
+                self.assertIn(plan["profile"], ("http-head", "http-get"))
+                self.assertEqual(plan["command"][-1], "https://example.org/login")
+
             finally:
                 os.chdir(cwd)
 

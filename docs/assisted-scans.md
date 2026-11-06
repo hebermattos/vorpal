@@ -1,14 +1,19 @@
 # Varredura assistida pela base de conhecimento
 
-O Vorpal recupera trechos de `corpus/`, incluindo textos em `corpus/imported/` produzidos pelo importador. Um modelo no Ollama local escolhe um dos perfis permitidos para o objetivo. O Vorpal valida essa escolha e monta o comando com o alvo original. A saída do modelo e os documentos nunca viram argumentos de execução. Esse fluxo dispensa treinamento do modelo TensorFlow/Keras.
+O Vorpal recupera trechos de `corpus/`, incluindo textos em `corpus/imported/` produzidos pelo importador. O modelo TensorFlow/Keras treinado pelo Vorpal pontua os perfis permitidos para o objetivo e os trechos recuperados. O CLI valida a escolha e monta o comando com o alvo original. O treinamento e a inferência rodam na própria máquina.
 
-Use Python 3.11+, Ollama em `127.0.0.1:11434` e um modelo **local** já instalado que aceite saída JSON estruturada. Os exemplos usam `qwen2.5:3b`; substitua pelo nome do seu modelo local. Instale curl para URL ou Nmap para LAN. Os trechos do corpus são enviados ao serviço Ollama; mantenha o corpus revisado e use um modelo que rode na sua máquina.
+Instale as [dependências do projeto](../README.md#ambiente-do-treinamento-e-da-importação) e prepare um checkpoint com contexto de pelo menos 32 bytes. O padrão de 128 bytes limita quanto texto o modelo lê de cada vez. O CLI reserva espaço para o objetivo e os trechos recuperados, truncando ambos quando necessário. A escolha do perfil é experimental e depende da qualidade do corpus e do treinamento. Revise o plano antes de executar. Instale curl para URL ou Nmap para LAN.
 
 ```bash
 python src/import_dataset.py --directory ./minha-base
-python src/scan.py --model qwen2.5:3b --url https://example.org/login --goal "Ver status e cabeçalhos sem baixar o corpo"
-python src/scan.py --model qwen2.5:3b --lan 192.168.1.0/24 --goal "Descobrir dispositivos ativos"
+python src/data.py --corpus corpus --out data
+python src/train.py --steps 500 --batch 8 --threads 4
+
+python src/scan.py --url https://example.org/login --goal "Ver status e cabeçalhos sem baixar o corpo"
+python src/scan.py --lan 192.168.1.0/24 --goal "Descobrir dispositivos ativos"
 ```
+
+O CLI usa `checkpoints/latest.keras` por padrão. Use `--checkpoint caminho/modelo.keras` para escolher outro checkpoint produzido pelo Vorpal.
 
 Os exemplos acima só imprimem o plano: perfil, alvo, argumentos do comando e referências recuperadas. Use `--corpus` para apontar para outra pasta com arquivos Markdown, RST e texto. Para executar, repita com `--execute --authorized` somente em ativos sob sua autorização. Isso gera um novo plano e executa o perfil selecionado nessa chamada. O resultado é JSON em stdout, com código de saída, observações (status HTTP ou hosts/portas) e saída bruta do scanner; pode incluir cabeçalhos sensíveis, como cookies. Ele não entra no corpus automaticamente.
 

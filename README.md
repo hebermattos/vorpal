@@ -6,11 +6,11 @@ Vorpal usa uma base de conhecimento e IA local para planejar e executar varredur
 
 ## Varredura assistida por IA
 
-Com Ollama e um modelo local instalados, o Vorpal consulta o corpus, escolhe um perfil de análise e monta um comando com escopo validado. O treinamento TensorFlow é opcional para esse fluxo.
+O Vorpal consulta o corpus e usa o próprio modelo TensorFlow/Keras treinado localmente para escolher o perfil de análise. O CLI carrega `checkpoints/latest.keras` por padrão. Prepare o corpus e treine o modelo antes da primeira varredura.
 
 ```bash
-python src/scan.py --model qwen2.5:3b --url https://example.org/login --goal "Ver os cabeçalhos HTTP"
-python src/scan.py --model qwen2.5:3b --lan 192.168.1.0/24 --goal "Descobrir dispositivos ativos"
+python src/scan.py --url https://example.org/login --goal "Ver os cabeçalhos HTTP"
+python src/scan.py --lan 192.168.1.0/24 --goal "Descobrir dispositivos ativos"
 ```
 
 Por padrão, o CLI mostra o plano sem executar o scanner. Para rodar, acrescente `--execute --authorized`. Veja [instalação, perfis e limites](docs/assisted-scans.md).
