@@ -1,10 +1,21 @@
-# Vorpal — IA local em TensorFlow/Keras
+# Vorpal — varredura assistida por IA local
 
-Vorpal é um projeto educacional de modelo autoregressivo **treinado do zero**, especializado experimentalmente em dados de programação e cibersegurança defensiva. O backend de treinamento e inferência é **TensorFlow/Keras na CPU**, sem PyTorch ou modelos pré-treinados.
+Vorpal usa uma base de conhecimento e IA local para planejar e executar varreduras autorizadas de **uma URL HTTP(S)** ou **uma sub-rede IPv4 privada**. Também inclui um modelo autoregressivo experimental treinado do zero em **TensorFlow/Keras na CPU**.
 
-> Protótipo de pesquisa: contexto de apenas 128 **bytes** por padrão e poucos parâmetros. Não é um detector confiável de vulnerabilidades e não substitui revisão de segurança.
+> Modelo experimental em TensorFlow/Keras: contexto de apenas 128 **bytes** por padrão e poucos parâmetros. Não é um detector confiável de vulnerabilidades e não substitui revisão de segurança.
 
-## Ambiente
+## Varredura assistida por IA
+
+Com Ollama e um modelo local instalados, o Vorpal consulta o corpus, escolhe um perfil de análise e monta um comando com escopo validado. O treinamento TensorFlow é opcional para esse fluxo.
+
+```bash
+python src/scan.py --model qwen2.5:3b --url https://example.org/login --goal "Ver os cabeçalhos HTTP"
+python src/scan.py --model qwen2.5:3b --lan 192.168.1.0/24 --goal "Descobrir dispositivos ativos"
+```
+
+Por padrão, o CLI mostra o plano sem executar o scanner. Para rodar, acrescente `--execute --authorized`. Veja [instalação, perfis e limites](docs/assisted-scans.md).
+
+## Ambiente do treinamento e da importação
 
 - Python 3.11 recomendado (Linux/Ubuntu/WSL).
 - Somente CPU; recomendado cerca de 8 GB de RAM para o modelo padrão.
@@ -91,6 +102,7 @@ Os testes verificam formatos e proteção da importação, máscara causal, form
 
 ## Organização
 
+- `src/scan.py`: planejamento com IA local e execução com escopo validado.
 - `src/import_dataset.py`, `src/ingest_url.py`: importação e validação de dados.
 - `src/data.py`: corpus textual e separação treino/validação.
 - `src/model.py`: Transformer causal TensorFlow/Keras.
