@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Como evitar phishing?
+Resposta: Desconfie de mensagens urgentes. Abra o serviço pelo aplicativo ou endereço conhecido.

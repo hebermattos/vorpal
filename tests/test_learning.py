@@ -136,7 +136,7 @@ class CodeQualityTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         for task in load_config('benchmark')['tasks']:
             with self.subTest(name=task['name']):
-                source = (root / 'corpus/python_basics' / (task['name'] + '.py')).read_text()
+                source = (root / 'corpus/python/examples' / (task['name'] + '.py')).read_text()
                 result = check_function(source, task['name'], task['cases'])
                 self.assertTrue(result['syntax_valid'])
                 self.assertEqual(result['behavior_status'], 'passed')

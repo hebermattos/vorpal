@@ -1,0 +1,3 @@
+A equipe separou doze cadernos para uma oficina. Oito foram entregues aos participantes e quatro permaneceram na mesa de apoio. Ao final, os materiais restantes foram guardados para outra atividade.
+
+Para conferir a quantidade, basta somar os oito cadernos entregues aos quatro que sobraram. O total continua sendo doze. O relato permite responder quantos foram distribuídos, mas não informa o preço nem a marca dos produtos.

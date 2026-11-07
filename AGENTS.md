@@ -14,6 +14,10 @@ This repository contains the Vorpal project, an educational prototype of an auto
 ## Important project structure
 
 - `README.md`: project overview and main commands.
+- `config/`: validated JSON defaults, including the shared profile registry in `config/web.json`.
+- `src/web.py` and `web/`: local dashboard and background task runner.
+- `src/security_tools.py`: model-proposed and validated Nmap/Nuclei commands.
+- `src/benchmark.py` and `src/code_quality.py`: syntax and limited AST behavior checks without executing generated Python.
 - `src/import_dataset.py`: data import and validation.
 - `src/ingest_url.py`: backward-compatible adapter to the canonical URL importer.
 - `src/content_safety.py`: shared secret-content filter.
@@ -23,7 +27,10 @@ This repository contains the Vorpal project, an educational prototype of an auto
 - `src/evaluate.py`: loss and byte-level perplexity.
 - `src/generate.py`: local text generation.
 - `tests/`: automated tests.
-- `corpus/`: didactic examples and reference material.
+- `corpus/security/`: security sources and its `url`, `pdfs/` and `imported/` inputs.
+- `corpus/python/`: Python sources, examples and local PDF books.
+- `corpus/tools/nmap/` and `corpus/tools/nuclei/`: tool-specific sources and planning examples.
+- `corpus/imported/`: legacy global cache retained for the complete profile.
 
 ## Expected commands
 
@@ -41,7 +48,11 @@ python src/evaluate.py --samples 50 --threads 4
 python src/generate.py --prompt "def validate_port(" --max-new 160 --threads 4
 ```
 
-`src/train.py` imports only new corpus sources, trains only document hashes not already consumed, and automatically resumes its checkpoint. Each `--steps` value adds that many steps. Use `--reset` to force reimport and retrain the full corpus from step zero. Run `src/data.py` separately only when you want to prepare the dataset without training.
+`src/train.py` imports only new sources under the selected corpus, trains only unconsumed document hashes by default, and automatically resumes its checkpoint. Use `--profile security`, `python`, `nmap`, `nuclei`, or `complete` to select the shared registry in `config/web.json`. Each profile has its own corpus, prepared dataset and history, while all phases use the same configured checkpoint. Without a profile, the defaults in `config/train.json` still apply; explicit `--corpus`/`--out` override profile paths.
+
+Each `--steps` value adds that many steps when eligible documents exist. `--replay` includes previously used documents and requires a checkpoint plus metadata. `--reset` rebuilds the shared latest model from step zero and forces reimport of the selected corpus; it clears only that output's consumed-document state, preserving split assignments and other profiles' histories. Run `src/data.py` separately only to prepare existing text; it does not fetch URLs or extract PDFs. For subject evaluation, use `src/evaluate.py --data <profile-output>/valid.bin`.
+
+For example, continue the Nmap phase with `python src/train.py --profile nmap --replay --steps 500 --threads 4`. Keep persisted split assignments and document hashes compatible when moving or deduplicating sources. New checkpoints preserve NumPy window sampling state, but full TensorFlow execution is not guaranteed to resume bit-for-bit.
 
 ## Code guidelines
 

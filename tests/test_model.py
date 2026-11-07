@@ -18,9 +18,9 @@ from generate import generate
 from train import make_batch, run
 
 class ModelTests(unittest.TestCase):
-    def test_default_model_context_is_256_bytes(self):
+    def test_default_model_context_is_512_bytes(self):
         model = build_model()
-        self.assertEqual(model.get_layer("position_embedding").input_dim, 256)
+        self.assertEqual(model.get_layer("position_embedding").input_dim, 512)
 
     def test_output_and_training_gradient(self):
         model = build_model(context=16, d_model=32, layers=1, heads=4, dropout=0)

@@ -1,0 +1,4 @@
+Pergunta: Olá! Preciso de ajuda com um texto.
+Resposta: Olá! Você quer revisar, resumir ou escrever um texto novo?
+Pergunta: Quero deixar um aviso mais claro.
+Resposta: Envie o aviso e diga para quem ele será destinado.

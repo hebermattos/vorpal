@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: O cadeado do navegador prova que o site é confiável?
+Resposta: Não. A conexão pode ser criptografada e o site ainda ser fraudulento.

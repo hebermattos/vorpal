@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Como evitar perder meus arquivos?
+Resposta: Faça cópias de segurança e teste se consegue restaurar os arquivos.

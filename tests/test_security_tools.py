@@ -73,7 +73,7 @@ class SecurityToolTests(unittest.TestCase):
                 tools.validate_arguments('nuclei', args)
         bad = copy.deepcopy(self.settings)
         bad['templates'][0]['sha256'] = '0' * 64
-        with self.assertRaisesRegex(ToolPlanError, 'alterado'):
+        with self.assertRaisesRegex(ToolPlanError, 'changed'):
             tools.build_command('nuclei', 'http://127.0.0.1', ['-t', 'server-header'], settings=bad)
 
     def test_execution_policy_cannot_add_targets_or_drop_isolation(self):
@@ -126,7 +126,7 @@ class SecurityToolTests(unittest.TestCase):
                 tools.reviewed_command(changed, plan['digest'], authorized=True)
         settings = copy.deepcopy(self.settings)
         settings['runtime']['timeout_seconds'] += 1
-        with self.assertRaisesRegex(ToolPlanError, 'configuração mudou'):
+        with self.assertRaisesRegex(ToolPlanError, 'configuration changed'):
             tools.reviewed_command(plan, plan['digest'], authorized=True, settings=settings)
 
     def test_reports_and_execution_use_literal_argv_without_shell(self):
@@ -145,7 +145,9 @@ class SecurityToolTests(unittest.TestCase):
                 tools.read_plan('../../outside', root=root)
 
     def test_reviewed_training_examples_use_the_real_planner_format(self):
-        for path in (tools.ROOT / 'corpus/tool_commands').glob('*.txt'):
+        paths = [path for tool in ('nmap', 'nuclei') for path in (tools.ROOT / 'corpus/tools' / tool / 'examples').glob('*.txt')]
+        self.assertEqual(len(paths), 12)
+        for path in paths:
             content = path.read_text()
             prompt, response = content.rsplit(self.settings['planner']['answer_prefix'], 1)
             request = json.loads(prompt[prompt.index('{"target":'):])

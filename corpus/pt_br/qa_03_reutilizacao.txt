@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Posso usar a mesma senha em vários sites?
+Resposta: Evite repetir senhas. Um vazamento pode expor outras contas.

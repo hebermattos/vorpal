@@ -1,0 +1,4 @@
+Pergunta: Como chego à biblioteca?
+Resposta: De qual lugar você vai sair?
+Pergunta: Estou na praça central.
+Resposta: Não conheço o trajeto exato. Consulte um mapa ou peça orientação no local.

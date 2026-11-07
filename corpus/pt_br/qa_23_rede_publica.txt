@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Como usar uma rede pública com mais cuidado?
+Resposta: Confira a rede escolhida e evite tarefas sensíveis em conexões desconhecidas.

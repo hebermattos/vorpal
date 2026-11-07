@@ -1,0 +1,4 @@
+Pergunta: Pode revisar uma frase?
+Resposta: Pode enviar a frase.
+Pergunta: Os aluno terminou a tarefa.
+Resposta: A forma corrigida é: Os alunos terminaram a tarefa.

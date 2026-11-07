@@ -275,6 +275,10 @@ def run(args):
 
 def main():
     p = argparse.ArgumentParser()
+    profiles = {profile["id"]: profile for profile in load_config("web")["profiles"]}
+    aliases = load_config("web")["profile_aliases"]
+    p.add_argument("--profile", type=lambda value: aliases.get(value, value), choices=tuple(profiles), default=None,
+                   help="Select a training subject configured in config/web.json")
     p.add_argument("--steps", type=int, default=SETTINGS["cli"]["steps"])
     p.add_argument("--batch", type=int, default=SETTINGS["cli"]["batch"])
     p.add_argument("--context", type=int, default=SETTINGS["cli"]["context"])
@@ -285,8 +289,8 @@ def main():
     p.add_argument("--threads", type=int, default=SETTINGS["cli"]["threads"])
     p.add_argument("--lr", type=float, default=SETTINGS["cli"]["lr"])
     p.add_argument("--seed", type=int, default=SETTINGS["cli"]["seed"])
-    p.add_argument("--corpus", default=SETTINGS["cli"]["corpus"])
-    p.add_argument("--out", default=SETTINGS["cli"]["out"])
+    p.add_argument("--corpus", default=None)
+    p.add_argument("--out", default=None)
     p.add_argument("--log-dir", default=SETTINGS["cli"]["log_dir"], help="Directory for timestamped training logs")
     p.add_argument("--data", default=None, help="Use this train file after importing and preparing the corpus")
     p.add_argument("--validation-data", default=None, help="Override the held-out validation binary")
@@ -295,6 +299,11 @@ def main():
     mode.add_argument("--reset", action="store_true", help="Reimport and train the full corpus from step zero")
     mode.add_argument("--replay", action="store_true", help="Train the same corpus again while resuming the existing checkpoint")
     args = p.parse_args()
+    selected = profiles[args.profile] if args.profile is not None else SETTINGS["cli"]
+    if args.corpus is None:
+        args.corpus = selected["corpus"]
+    if args.out is None:
+        args.out = selected["out"]
     run_with_log(args)
 
 if __name__ == "__main__":

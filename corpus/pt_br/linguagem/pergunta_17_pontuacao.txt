@@ -1,0 +1,2 @@
+Pergunta: Pontue a frase: Olá Ana como você está
+Resposta: Olá, Ana! Como você está?

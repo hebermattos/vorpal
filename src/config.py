@@ -134,6 +134,9 @@ def validate_config(name, value):
         identifiers = [profile["id"] for profile in value["profiles"]]
         if len(set(identifiers)) != len(identifiers):
             raise ConfigError(f"Invalid configuration {path}: profile IDs must be unique")
+        if any(alias in identifiers or target not in identifiers
+               for alias, target in value["profile_aliases"].items()):
+            raise ConfigError(f"Invalid configuration {path}: profile aliases must reference canonical IDs")
         local_paths = [value["runtime"]["log_dir"]]
         local_paths.extend(profile[key] for profile in value["profiles"] for key in ("corpus", "out"))
         if any(Path(raw).is_absolute() or ".." in Path(raw).parts for raw in local_paths):

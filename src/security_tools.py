@@ -45,7 +45,7 @@ def _time():
 def _inside(root, raw):
     path = (Path(root).resolve() / raw).resolve()
     if not path.is_relative_to(Path(root).resolve()):
-        raise ToolPlanError('O caminho deve permanecer dentro do projeto.')
+        raise ToolPlanError('The path must remain inside the project.')
     return path
 
 
@@ -57,40 +57,40 @@ def _private_ip(value):
     try:
         address = ipaddress.IPv4Address(value)
     except (ValueError, TypeError) as exc:
-        raise ToolPlanError('Informe um único IPv4 local literal; nomes, redes CIDR e listas não são aceitos.') from exc
+        raise ToolPlanError('Enter a single local IPv4 literal; names, CIDR networks, and lists are not accepted.') from exc
     if not any(address in network for network in _LOCAL_NETWORKS):
-        raise ToolPlanError('O alvo deve pertencer a uma rede privada, loopback ou link-local.')
+        raise ToolPlanError('The target must belong to a private, loopback, or link-local network.')
     if address.is_unspecified or address.is_multicast or address.is_reserved:
-        raise ToolPlanError('Endereço especial não permitido.')
+        raise ToolPlanError('Special address not allowed.')
     return str(address)
 
 
 def validate_target(tool, target):
     if not isinstance(target, str) or not target or any(char.isspace() for char in target):
-        raise ToolPlanError('Informe um alvo local sem espaços.')
+        raise ToolPlanError('Enter a local target without spaces.')
     if tool == 'nmap':
         return _private_ip(target)
     if tool != 'nuclei':
-        raise ToolPlanError('Ferramenta desconhecida.')
+        raise ToolPlanError('Unknown tool.')
     try:
         parsed = urlsplit(target)
         if (parsed.scheme not in {'http', 'https'} or parsed.username is not None or parsed.password is not None
                 or parsed.query or parsed.fragment or parsed.path not in {'', '/'}):
-            raise ValueError('Use somente a origem HTTP(S), sem credenciais, caminhos ou parâmetros.')
+            raise ValueError('Use only the HTTP(S) origin, without credentials, paths, or parameters.')
         host = _private_ip(parsed.hostname)
         port = parsed.port
         if port is not None and not 1 <= port <= 65535:
-            raise ValueError('Porta fora do intervalo válido.')
+            raise ValueError('Port outside the valid range.')
         authority = host + (f':{port}' if port is not None else '')
         return urlunsplit((parsed.scheme, authority, '', '', ''))
     except (ValueError, TypeError) as exc:
-        raise ToolPlanError(f'Alvo Nuclei inválido: {exc}') from exc
+        raise ToolPlanError(f'Invalid Nuclei target: {exc}') from exc
 
 
 def _pinned(root, raw, expected):
     path = _inside(root, raw)
     if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
-        raise ToolPlanError(f'Arquivo local ausente ou alterado desde a revisão: {raw}')
+        raise ToolPlanError(f'Local file missing or changed since review: {raw}')
     return path
 
 
@@ -105,13 +105,13 @@ def tool_status(settings=None):
 def validate_arguments(tool, args, *, settings=None):
     settings = _settings(settings)
     if tool not in _VALUE_FLAGS or tool not in settings['tools']:
-        raise ToolPlanError('Ferramenta desconhecida.')
+        raise ToolPlanError('Unknown tool.')
     if (not isinstance(args, list) or not args or len(args) > settings['runtime']['max_args']
             or any(not isinstance(value, str) or not value or not value.isascii() for value in args)):
-        raise ToolPlanError('O modelo deve retornar uma lista limitada de argumentos ASCII.')
+        raise ToolPlanError('The model must return a bounded list of ASCII arguments.')
     spec = settings['tools'][tool]
     if not set(spec['flags']) <= _BOOLEAN_FLAGS[tool] or any(_VALUE_FLAGS[tool].get(key) != value for key, value in spec['values'].items()):
-        raise ToolPlanError('O catálogo contém opções fora das capacidades suportadas.')
+        raise ToolPlanError('The catalog contains options outside the supported capabilities.')
     normalized = []
     seen = set()
     index = 0
@@ -122,7 +122,7 @@ def validate_arguments(tool, args, *, settings=None):
             args = args[:index] + ['-T', flag[2:]] + args[index + 1:]
             flag = '-T'
         if flag in seen:
-            raise ToolPlanError(f'Opção repetida: {flag}')
+            raise ToolPlanError(f'Repeated option: {flag}')
         seen.add(flag)
         if flag in spec['flags']:
             normalized.append(flag)
@@ -130,39 +130,39 @@ def validate_arguments(tool, args, *, settings=None):
             continue
         kind = spec['values'].get(flag)
         if kind is None or index + 1 >= len(args):
-            raise ToolPlanError(f'Opção não permitida ou sem valor: {flag}')
+            raise ToolPlanError(f'Option not allowed or missing its value: {flag}')
         value = args[index + 1]
         if kind == 'ports':
             if not re.fullmatch(r'[0-9]+(?:,[0-9]+)*', value):
-                raise ToolPlanError('As portas devem ser números separados por vírgula.')
+                raise ToolPlanError('Ports must be comma-separated numbers.')
             ports = [int(item) for item in value.split(',')]
             if len(ports) > settings['runtime']['max_ports'] or any(not 1 <= port <= 65535 for port in ports) or len(set(ports)) != len(ports):
-                raise ToolPlanError('Lista de portas inválida, repetida ou acima do limite.')
+                raise ToolPlanError('Port list is invalid, contains duplicates, or exceeds the limit.')
             value = ','.join(map(str, ports))
         elif kind == 'count':
             if not value.isdecimal() or not 1 <= int(value) <= settings['runtime']['max_ports']:
-                raise ToolPlanError('Quantidade de portas fora do limite configurado.')
+                raise ToolPlanError('Port count outside the configured limit.')
             value = str(int(value))
         elif kind == 'timing':
             if value not in {'2', '3'}:
-                raise ToolPlanError('Somente os níveis de temporização T2 e T3 são permitidos.')
+                raise ToolPlanError('Only timing levels T2 and T3 are allowed.')
         elif kind == 'templates':
             identifiers = value.split(',')
             allowed = {entry['id'] for entry in settings['templates']}
             if not set(identifiers) <= allowed or len(set(identifiers)) != len(identifiers):
-                raise ToolPlanError('Selecione somente IDs de templates locais revisados.')
+                raise ToolPlanError('Select only reviewed local template IDs.')
         normalized.extend([flag, value])
         index += 2
     if tool == 'nmap':
         selections = len(seen & {'-p', '--top-ports', '-F'})
         if selections != 1:
-            raise ToolPlanError('O modelo deve selecionar uma única lista de portas, --top-ports ou -F.')
+            raise ToolPlanError('The model must select exactly one port list, --top-ports, or -F.')
         if '-F' in seen and settings['runtime']['max_ports'] < 100:
-            raise ToolPlanError('O modo -F excede o limite configurado de portas.')
+            raise ToolPlanError('The -F mode exceeds the configured port limit.')
         if '--version-light' in seen and '-sV' not in seen:
-            raise ToolPlanError('--version-light requer -sV.')
+            raise ToolPlanError('--version-light requires -sV.')
     elif '-t' not in seen:
-        raise ToolPlanError('O Nuclei requer uma seleção explícita de templates revisados.')
+        raise ToolPlanError('Nuclei requires an explicit selection of reviewed templates.')
     return normalized
 
 
@@ -178,13 +178,13 @@ def _validate_runtime_policy(tool, tokens):
     while index < len(tokens):
         flag = tokens[index]
         if flag in found:
-            raise ToolPlanError('Política de execução contém opções repetidas.')
+            raise ToolPlanError('Execution policy contains repeated options.')
         found.add(flag)
         index += 1
         if flag in boolean:
             continue
         if flag not in valued or index == len(tokens):
-            raise ToolPlanError('Política de execução contém uma opção não suportada.')
+            raise ToolPlanError('Execution policy contains an unsupported option.')
         value = tokens[index]
         index += 1
         if flag == '-oX':
@@ -196,9 +196,9 @@ def _validate_runtime_policy(tool, tokens):
         else:
             valid = value.isdecimal() and int(value) >= (0 if flag in {'--max-retries', '-retries'} else 1)
         if not valid:
-            raise ToolPlanError(f'Valor inválido na política de execução: {flag}')
+            raise ToolPlanError(f'Invalid value in execution policy: {flag}')
     if found != boolean | valued:
-        raise ToolPlanError('A política deve manter todas as opções de escopo, limites e isolamento.')
+        raise ToolPlanError('The policy must retain all scope, limit, and isolation options.')
 
 
 def build_command(tool, target, args, *, settings=None, root=ROOT):
@@ -209,7 +209,7 @@ def build_command(tool, target, args, *, settings=None, root=ROOT):
     _validate_runtime_policy(tool, spec['required'])
     executable = shutil.which(spec['executable'])
     if executable is None:
-        raise ToolPlanError(f'{tool} não foi encontrado no PATH. Instale a ferramenta separadamente.')
+        raise ToolPlanError(f'{tool} was not found on PATH. Install the tool separately.')
     translated = list(normalized)
     if tool == 'nuclei':
         registry = {entry['id']: entry for entry in settings['templates']}
@@ -236,14 +236,14 @@ def proposal_from_response(tool, target, goal, response, *, settings=None, root=
     try:
         payload = json.loads(response)
         if not isinstance(payload, dict) or set(payload) != {'args', 'reason'}:
-            raise ToolPlanError('A resposta deve conter somente args e reason.')
+            raise ToolPlanError('The response must contain only args and reason.')
         reason = payload['reason']
         if not isinstance(reason, str) or not reason.strip() or len(reason) > settings['runtime']['max_reason_chars'] or not reason.isprintable():
-            raise ToolPlanError('Justificativa do modelo inválida.')
+            raise ToolPlanError('Invalid model rationale.')
         args = validate_arguments(tool, payload['args'], settings=settings)
         argv = build_command(tool, target, args, settings=settings, root=root)
     except (ValueError, TypeError, KeyError) as exc:
-        raise ToolPlanError(f'Proposta do modelo rejeitada: {exc}') from exc
+        raise ToolPlanError(f'Model proposal rejected: {exc}') from exc
     plan = {'status': 'ready', 'tool': tool, 'target': target, 'goal': goal,
             'args': args, 'reason': reason, 'argv': argv, 'settings_sha256': _settings_digest(settings)}
     plan['command'] = shlex.join(argv)
@@ -261,7 +261,7 @@ def planning_prompt(tool, target, goal, context, *, settings=None):
         if len(prompt.encode('utf-8')) <= context:
             return prompt, used_goal
         if not used_goal:
-            raise ToolPlanError('O contexto do checkpoint é curto demais para o formato de planejamento.')
+            raise ToolPlanError('The checkpoint context is too short for the planning format.')
         used_goal = used_goal[:-1]
 
 
@@ -269,9 +269,9 @@ def propose(tool, target, goal, *, model=None, settings=None, root=ROOT):
     settings = _settings(settings)
     target = validate_target(tool, target)
     if not isinstance(goal, str) or not goal.strip() or len(goal) > settings['runtime']['max_goal_chars'] or not goal.isprintable():
-        raise ToolPlanError('Informe um objetivo curto, em uma única linha.')
+        raise ToolPlanError('Enter a short, single-line goal.')
     if model is None:
-        raise ToolPlanError('Um checkpoint treinado é obrigatório para propor comandos.')
+        raise ToolPlanError('A trained checkpoint is required to propose commands.')
     context = model.get_layer('position_embedding').input_dim
     prompt, used_goal = planning_prompt(tool, target, goal, context, settings=settings)
     try:
@@ -306,42 +306,42 @@ def write_report(value, kind, *, settings=None, root=ROOT):
 def read_plan(identifier, *, settings=None, root=ROOT):
     settings = _settings(settings)
     if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{24}', identifier):
-        raise ToolPlanError('Identificador de plano inválido.')
+        raise ToolPlanError('Invalid plan identifier.')
     path = _directory(root, settings, 'plans') / f'{identifier}.json'
     if path.is_symlink():
-        raise ToolPlanError('O plano não pode ser um link simbólico.')
+        raise ToolPlanError('The plan cannot be a symbolic link.')
     try:
         value = json.loads(path.read_text(encoding='utf-8'))
         if not isinstance(value, dict):
             raise ValueError('Expected an object')
         return value
     except (OSError, ValueError) as exc:
-        raise ToolPlanError(f'Não foi possível ler o plano: {exc}') from exc
+        raise ToolPlanError(f'Unable to read the plan: {exc}') from exc
 
 
 def reviewed_command(plan, digest, *, authorized=False, settings=None, root=ROOT):
     settings = _settings(settings)
     if authorized is not True:
-        raise ToolPlanError('Confirme a autorização para testar o alvo local.')
+        raise ToolPlanError('Confirm authorization to test the local target.')
     if not isinstance(digest, str) or not re.fullmatch(r'[a-f0-9]{64}', digest):
-        raise ToolPlanError('Informe o digest do comando revisado.')
+        raise ToolPlanError('Enter the digest of the reviewed command.')
     try:
         if plan['status'] != 'ready' or not secrets.compare_digest(plan_digest(plan), digest) or plan['digest'] != digest:
-            raise ToolPlanError('O plano foi alterado ou não está pronto. Gere e revise uma nova proposta.')
+            raise ToolPlanError('The plan changed or is not ready. Generate and review a new proposal.')
         if plan['settings_sha256'] != _settings_digest(settings):
-            raise ToolPlanError('A configuração mudou. Gere e revise uma nova proposta.')
+            raise ToolPlanError('The configuration changed. Generate and review a new proposal.')
         argv = build_command(plan['tool'], plan['target'], plan['args'], settings=settings, root=root)
         if argv != plan['argv']:
-            raise ToolPlanError('O executável ou comando mudou. Gere uma nova proposta.')
+            raise ToolPlanError('The executable or command changed. Generate a new proposal.')
         return argv
     except (KeyError, TypeError) as exc:
-        raise ToolPlanError('O plano salvo está incompleto ou inválido.') from exc
+        raise ToolPlanError('The saved plan is incomplete or invalid.') from exc
 
 
 def execute_plan(plan, digest, *, authorized=False, settings=None, root=ROOT):
     settings = _settings(settings)
     argv = reviewed_command(plan, digest, authorized=authorized, settings=settings, root=root)
-    print('Executando comando revisado:', shlex.join(argv), flush=True)
+    print('Executing reviewed command:', shlex.join(argv), flush=True)
     output = ''
     truncated = False
     timed_out = threading.Event()
@@ -386,7 +386,7 @@ def execute_plan(plan, digest, *, authorized=False, settings=None, root=ROOT):
                            'argv': argv, 'started_at': started, 'returncode': code, 'output': output,
                            'output_truncated': truncated, 'status': 'cancelled' if cancelled else 'timed_out' if timed_out.is_set() else 'completed' if code == 0 else 'failed'},
                           'executions', settings=settings, root=root)
-    print('\nRelatório:', report['id'], report['status'], flush=True)
+    print('\nReport:', report['id'], report['status'], flush=True)
     return report
 
 
@@ -411,13 +411,13 @@ def main():
     settings = load_config('security_tools')
     parser = argparse.ArgumentParser(description=__doc__)
     modes = parser.add_subparsers(dest='mode', required=True)
-    planner = modes.add_parser('plan', help='Solicitar ao modelo uma proposta, sem executar a ferramenta')
+    planner = modes.add_parser('plan', help='Request a model proposal without executing the tool')
     planner.add_argument('--tool', choices=tuple(settings['tools']), required=True)
     planner.add_argument('--target', required=True)
     planner.add_argument('--goal', required=True)
     planner.add_argument('--checkpoint', default=load_config('train')['policy']['checkpoint'])
     planner.add_argument('--threads', type=int, default=settings['cli']['threads'])
-    runner = modes.add_parser('run', help='Executar somente um plano já revisado')
+    runner = modes.add_parser('run', help='Execute only a previously reviewed plan')
     runner.add_argument('--plan-id', required=True)
     runner.add_argument('--digest', required=True)
     runner.add_argument('--authorized', action='store_true')
@@ -429,7 +429,7 @@ def main():
             raise SystemExit(0 if report['status'] == 'completed' else 1)
         target = validate_target(args.tool, args.target)
         if not isinstance(args.goal, str) or not args.goal.strip() or len(args.goal) > settings['runtime']['max_goal_chars'] or not args.goal.isprintable():
-            raise ToolPlanError('Objetivo inválido.')
+            raise ToolPlanError('Invalid goal.')
         try:
             from .model import configure_cpu
         except ImportError:
@@ -446,10 +446,10 @@ def main():
         print(json.dumps(plan, indent=2, ensure_ascii=False), flush=True)
         if plan['status'] != 'ready':
             raise SystemExit(2)
-        print('Comando para revisão:', plan['command'], flush=True)
-        print(f"Execute após revisar: python src/security_tools.py run --plan-id {plan['id']} --digest {plan['digest']} --authorized", flush=True)
+        print('Command for review:', plan['command'], flush=True)
+        print(f"Run after review: python src/security_tools.py run --plan-id {plan['id']} --digest {plan['digest']} --authorized", flush=True)
     except (ToolPlanError, OSError, ValueError) as exc:
-        parser.exit(2, f'Erro: {exc}\n')
+        parser.exit(2, f'Error: {exc}\n')
 
 
 if __name__ == '__main__':

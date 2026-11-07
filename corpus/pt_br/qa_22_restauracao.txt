@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Como saber se meu backup funciona?
+Resposta: Restaure alguns arquivos em um local separado e confira o conteúdo.

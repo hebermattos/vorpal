@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Como cuidar das bibliotecas de um projeto?
+Resposta: Acompanhe atualizações, revise as mudanças e teste antes de publicar.

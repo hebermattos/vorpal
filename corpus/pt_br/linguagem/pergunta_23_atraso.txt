@@ -1,0 +1,2 @@
+Pergunta: Avise que a entrega vai atrasar, sem inventar um novo prazo.
+Resposta: A entrega vai atrasar. Assim que houver um novo prazo confirmado, eu aviso.

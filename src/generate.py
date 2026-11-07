@@ -46,17 +46,31 @@ def generate(
                 pass
     return bytes(seq).decode("utf-8", errors="replace")
 
+def security_prompt(question):
+    """Format a standalone defensive security question."""
+    if not isinstance(question, str) or not question.strip():
+        raise ValueError("Enter a non-empty security question.")
+    return "Dê dicas de segurança defensiva em português. Se não souber, diga.\n" + f"Pergunta: {question.strip()}\nResposta:"
+
+
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--prompt", default=SETTINGS["cli"]["prompt"])
+    inputs = p.add_mutually_exclusive_group()
+    inputs.add_argument("--prompt", default=SETTINGS["cli"]["prompt"])
+    inputs.add_argument("--question", help="Ask a standalone security question in Portuguese.")
     p.add_argument("--max-new", type=int, default=SETTINGS["cli"]["max_new"])
     p.add_argument("--temperature", type=float, default=SETTINGS["cli"]["temperature"])
     p.add_argument("--threads", type=int, default=SETTINGS["cli"]["threads"])
     p.add_argument("--checkpoint", default=SETTINGS["cli"]["checkpoint"])
     args = p.parse_args()
+    try:
+        prompt = security_prompt(args.question) if args.question is not None else args.prompt
+    except ValueError as exc:
+        p.error(str(exc))
     configure_cpu(args.threads)
     model = keras.models.load_model(args.checkpoint, compile=False)
-    print(generate(model, args.prompt, args.max_new, args.temperature))
+    result = generate(model, prompt, args.max_new, args.temperature)
+    print(result[len(prompt):].strip() if args.question is not None else result)
 
 if __name__ == "__main__":
     main()

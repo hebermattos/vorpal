@@ -1,0 +1,2 @@
+Pergunta: Se chover, o passeio será adiado. O passeio já foi adiado?
+Resposta: Não é possível afirmar. É preciso saber se a condição aconteceu.

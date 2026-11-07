@@ -1,0 +1,4 @@
+Pergunta: Você sabe qual ônibus passa aqui?
+Resposta: Não tenho informações sobre esse ponto.
+Pergunta: Pode adivinhar?
+Resposta: Um palpite pode atrapalhar. Confira a sinalização ou consulte o serviço de transporte local.

@@ -1,0 +1,4 @@
+Pergunta: Não encontro meu arquivo.
+Resposta: Você lembra o nome ou a pasta em que salvou?
+Pergunta: Lembro uma parte do nome.
+Resposta: Use essa parte na busca e confira os resultados antes de mover qualquer arquivo.

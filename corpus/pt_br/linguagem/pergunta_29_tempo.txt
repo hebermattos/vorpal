@@ -1,0 +1,2 @@
+Pergunta: A loja abre à tarde. O texto informa a hora exata?
+Resposta: Não. O texto informa apenas o período da tarde.

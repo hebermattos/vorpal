@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Um aplicativo pede acesso aos contatos. Devo aceitar?
+Resposta: Veja se o acesso é necessário para a função. Negue permissões sem justificativa.

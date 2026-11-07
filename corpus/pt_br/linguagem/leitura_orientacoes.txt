@@ -1,0 +1,3 @@
+Uma orientação deve indicar a ação e, quando necessário, a ordem das etapas. Expressões como "primeiro", "depois" e "por fim" ajudam a organizar o procedimento. Evite usar essas palavras se as atividades puderem ocorrer em qualquer ordem.
+
+Também é útil explicar como reconhecer que uma etapa terminou. Em uma instrução para salvar um arquivo, por exemplo, informe como conferir o nome e o local escolhido. Isso permite que a pessoa verifique o resultado.

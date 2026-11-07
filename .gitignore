@@ -14,3 +14,5 @@ logs/
 corpus/imported/
 corpus/pdfs/
 /corpus/**/imported/
+
+/corpus/**/pdfs/

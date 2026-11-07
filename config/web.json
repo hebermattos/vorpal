@@ -24,15 +24,36 @@
   "profiles": [
     {
       "id": "complete",
-      "label": "Corpus completo",
+      "label": "Complete corpus",
       "corpus": "corpus",
       "out": "data"
     },
     {
+      "id": "security",
+      "label": "Security",
+      "corpus": "corpus/security",
+      "out": "data/security"
+    },
+    {
       "id": "python",
-      "label": "Exercícios Python",
-      "corpus": "corpus/python_basics",
-      "out": "data/python_basics"
+      "label": "Python",
+      "corpus": "corpus/python",
+      "out": "data/python"
+    },
+    {
+      "id": "nmap",
+      "label": "Tool \u00b7 Nmap",
+      "corpus": "corpus/tools/nmap",
+      "out": "data/tools/nmap"
+    },
+    {
+      "id": "nuclei",
+      "label": "Tool \u00b7 Nuclei",
+      "corpus": "corpus/tools/nuclei",
+      "out": "data/tools/nuclei"
     }
-  ]
+  ],
+  "profile_aliases": {
+    "seguranca": "security"
+  }
 }

@@ -87,7 +87,7 @@ class JobManager:
     def start(self, action, command):
         with self.lock:
             if self.closed or self.active():
-                raise BusyError("Já existe uma tarefa em execução. Aguarde ou interrompa antes de iniciar outra.")
+                raise BusyError("A job is already running. Wait or cancel it before starting another.")
             job = {"id": secrets.token_hex(12), "action": action, "command": command,
                    "status": "running", "created_at": now(), "finished_at": None,
                    "returncode": None, "cancel_requested": False, "output": ""}
@@ -113,7 +113,7 @@ class JobManager:
         with self.lock:
             job = next((job for job in self.jobs if job["id"] == identifier), None)
             if job is None:
-                raise FileNotFoundError("Tarefa não encontrada.")
+                raise FileNotFoundError("Job not found.")
             return self._copy(job)
 
     def _run(self, job):
@@ -137,7 +137,7 @@ class JobManager:
                 code = process.wait()
         except (OSError, ValueError) as exc:
             with self.lock:
-                job["output"] += f"\nNão foi possível executar a tarefa: {exc}\n"
+                job["output"] += f"\nUnable to execute the job: {exc}\n"
         finally:
             with self.lock:
                 job.update(returncode=code, finished_at=now(),
@@ -172,7 +172,7 @@ class JobManager:
         with self.lock:
             job = self.active()
             if job is None or job["id"] != identifier:
-                raise ValueError("Esta tarefa não está em execução.")
+                raise ValueError("This job is not running.")
             job["cancel_requested"] = True
             if self.process is not None:
                 self._signal_stop(self.process)
@@ -205,25 +205,25 @@ class Application:
 
     def path(self, raw):
         if not isinstance(raw, str):
-            raise ValueError("Caminho inválido.")
+            raise ValueError("Invalid path.")
         path = (self.root / raw).resolve()
         if not path.is_relative_to(self.root):
-            raise ValueError("O caminho deve permanecer dentro do projeto.")
+            raise ValueError("The path must remain inside the project.")
         return path
 
     def configuration(self, name):
         if not re.fullmatch(r"[a-z_]+", name) or name == "schema":
-            raise ValueError("Configuração inválida.")
+            raise ValueError("Invalid configuration.")
         path = self.root / "config" / f"{name}.json"
         if not path.is_file() or path.is_symlink():
-            raise FileNotFoundError("Configuração não encontrada.")
+            raise FileNotFoundError("Configuration not found.")
         value = json.loads(path.read_text(encoding="utf-8"))
         return validate_config(name, value)
 
     def save_configuration(self, name, value):
         with self.lock, self.jobs.lock:
             if self.jobs.active():
-                raise BusyError("Aguarde a tarefa terminar antes de alterar configurações.")
+                raise BusyError("Wait for the job to finish before changing settings.")
             self.configuration(name)
             validate_config(name, value)
             path = self.root / "config" / f"{name}.json"
@@ -234,10 +234,11 @@ class Application:
         return {"saved": True, "restart_required": name == "web"}
 
     def profile(self, identifier):
+        identifier = self.settings["profile_aliases"].get(identifier, identifier)
         profiles = self.settings["profiles"]
         profile = next((profile for profile in profiles if profile["id"] == identifier), None)
         if profile is None:
-            raise ValueError("Selecione um perfil de corpus válido.")
+            raise ValueError("Select a valid corpus profile.")
         self.path(profile["corpus"])
         self.path(profile["out"])
         return profile
@@ -251,12 +252,12 @@ class Application:
         value = params.get(key, default)
         if (isinstance(value, bool) or (type(value) is not int if integer else type(value) not in (int, float))
                 or not math.isfinite(value) or not minimum <= value <= maximum):
-            raise ValueError(f"{key}: informe um {'inteiro' if integer else 'número'} entre {minimum} e {maximum}.")
+            raise ValueError(f"{key}: enter an {'integer' if integer else 'number'} between {minimum} and {maximum}.")
         return value
 
     def command(self, action, params):
         allowed = {
-            "generate": {"prompt", "max_new", "temperature", "threads", "checkpoint"},
+            "generate": {"prompt", "mode", "max_new", "temperature", "threads", "checkpoint"},
             "train": {"steps", "batch", "threads", "profile", "mode"},
             "evaluate": {"samples", "threads", "checkpoint", "profile"},
             "benchmark": {"threads", "checkpoint"},
@@ -265,7 +266,7 @@ class Application:
             "tool_run": {"plan_id", "digest", "authorized"},
         }
         if action not in allowed or not isinstance(params, dict) or params.keys() - allowed[action]:
-            raise ValueError("Ação ou parâmetros inválidos.")
+            raise ValueError("Invalid action or parameters.")
         if action in {"tool_plan", "tool_run"}:
             settings = self.configuration("security_tools")
             command = [sys.executable, "-u", str(self.root / "src/security_tools.py")]
@@ -275,14 +276,14 @@ class Application:
                 return command + ["run", "--plan-id", params["plan_id"], "--digest", params["digest"], "--authorized"]
             tool = params.get("tool")
             if tool not in settings["tools"]:
-                raise ValueError("Selecione Nmap ou Nuclei.")
+                raise ValueError("Select Nmap or Nuclei.")
             target = validate_tool_target(tool, params.get("target"))
             goal = params.get("goal")
             if not isinstance(goal, str) or not goal.strip() or not goal.isprintable() or len(goal) > settings["runtime"]["max_goal_chars"]:
-                raise ValueError("Informe um objetivo curto, em uma única linha.")
+                raise ValueError("Enter a short, single-line goal.")
             checkpoint = self.checkpoints().get(params.get("checkpoint", "latest"))
             if checkpoint is None or not checkpoint.is_file():
-                raise ValueError("Um checkpoint treinado é obrigatório para planejar comandos.")
+                raise ValueError("A trained checkpoint is required to plan commands.")
             threads = self._number(params, "threads", settings["cli"]["threads"], self.settings["limits"]["threads"])
             return command + ["plan", "--tool", tool, "--target", target, "--goal", goal,
                               "--checkpoint", str(checkpoint), "--threads", str(threads)]
@@ -296,24 +297,27 @@ class Application:
         if action in {"generate", "evaluate", "benchmark"}:
             checkpoint = self.checkpoints().get(params.get("checkpoint", "latest"))
             if checkpoint is None or not checkpoint.is_file():
-                raise ValueError("Checkpoint não encontrado. Treine o modelo ou escolha um checkpoint disponível.")
+                raise ValueError("Checkpoint not found. Train the model or select an available checkpoint.")
             command += ["--checkpoint", str(checkpoint)]
         if action == "generate":
             prompt = params.get("prompt", defaults["prompt"])
             if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > limits["prompt_chars"]:
-                raise ValueError(f"Informe um prompt com até {limits['prompt_chars']} caracteres.")
-            command += ["--prompt", prompt, "--max-new", str(self._number(params, "max_new", defaults["max_new"], limits["max_new"])),
+                raise ValueError(f"Enter a prompt with at most {limits['prompt_chars']} characters.")
+            mode = params.get("mode", "continuation")
+            if mode not in ("continuation", "security"):
+                raise ValueError("Invalid generation mode.")
+            command += ["--question" if mode == "security" else "--prompt", prompt, "--max-new", str(self._number(params, "max_new", defaults["max_new"], limits["max_new"])),
                         "--temperature", str(self._number(params, "temperature", defaults["temperature"], 2, minimum=0.01, integer=False))]
         if action in {"train", "evaluate", "prepare", "import"}:
             profile = self.profile(params.get("profile", self.settings["profiles"][0]["id"]))
         if action == "train":
             mode = params.get("mode", "new")
             if mode not in {"new", "replay"}:
-                raise ValueError("Modo de treinamento inválido.")
+                raise ValueError("Invalid training mode.")
             if mode == "replay":
                 train = self.configuration("train")
                 if not self.checkpoints()["latest"].is_file() or not self.path(train["policy"]["metadata"]).is_file():
-                    raise ValueError("Repetir o corpus requer checkpoint e metadados existentes.")
+                    raise ValueError("Replaying the corpus requires an existing checkpoint and metadata.")
                 command += ["--replay"]
             command += ["--steps", str(self._number(params, "steps", defaults["steps"], limits["steps"])),
                         "--batch", str(self._number(params, "batch", defaults["batch"], limits["batch"])),
@@ -404,12 +408,12 @@ class Handler(BaseHTTPRequestHandler):
         if port == 80:
             hosts.update({"127.0.0.1", "localhost"})
         if self.headers.get("Host") not in hosts:
-            raise PermissionError("Host não autorizado. Acesse pelo endereço local do painel.")
+            raise PermissionError("Unauthorized host. Use the dashboard's local address.")
         origin = self.headers.get("Origin")
         if origin and origin not in {f"http://{host}" for host in hosts}:
-            raise PermissionError("Origem não autorizada.")
+            raise PermissionError("Unauthorized origin.")
         if mutation and not secrets.compare_digest(self.headers.get("X-Vorpal-Token", ""), self.server.app.token):
-            raise PermissionError("Sessão inválida. Atualize a página e tente novamente.")
+            raise PermissionError("Invalid session. Refresh the page and try again.")
 
     def _send(self, code, payload, content_type="application/json; charset=utf-8", extra=None):
         if not isinstance(payload, bytes):
@@ -434,16 +438,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def _body(self):
         if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
-            raise ValueError("Envie os dados como application/json.")
+            raise ValueError("Send data as application/json.")
         if self.headers.get("Transfer-Encoding"):
-            raise ValueError("Transferência não suportada.")
+            raise ValueError("Unsupported transfer encoding.")
         length = int(self.headers.get("Content-Length", "0"))
         if not 0 < length <= self.server.app.settings["runtime"]["max_request_bytes"]:
             self.close_connection = True
-            raise ValueError("Tamanho da requisição inválido.")
+            raise ValueError("Invalid request size.")
         value = json.loads(self.rfile.read(length))
         if not isinstance(value, dict):
-            raise ValueError("Informe um objeto JSON.")
+            raise ValueError("Enter a JSON object.")
         return value
 
     def _dispatch(self, mutation):
@@ -462,7 +466,7 @@ class Handler(BaseHTTPRequestHandler):
                 elif path == "/api/config":
                     self._send(200, app.save_configuration(body.get("name", ""), body.get("value")))
                 else:
-                    self._send(404, {"error": "Rota não encontrada."})
+                    self._send(404, {"error": "Route not found."})
             elif path == "/api/state":
                 self._send(200, app.state())
             elif re.fullmatch(r"/api/jobs/[a-f0-9]{24}", path):
@@ -475,14 +479,14 @@ class Handler(BaseHTTPRequestHandler):
                 pdf = app.path(raw)
                 corpus = app.path(app.settings["profiles"][0]["corpus"])
                 if not pdf.is_relative_to(corpus) or pdf.suffix.lower() != ".pdf" or not pdf.is_file():
-                    raise FileNotFoundError("PDF não encontrado.")
+                    raise FileNotFoundError("PDF not found.")
                 self._send(200, pdf.read_bytes(), "application/pdf", {"Content-Disposition": f"inline; filename*=UTF-8''{quote(pdf.name)}"})
             elif path in {"/", "/app.js", "/styles.css", "/favicon.svg"}:
                 filename = "index.html" if path == "/" else path[1:]
                 types = {"index.html": "text/html; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "styles.css": "text/css; charset=utf-8", "favicon.svg": "image/svg+xml"}
                 self._send(200, (app.root / "web" / filename).read_bytes(), types[filename])
             else:
-                self._send(404, {"error": "Rota não encontrada."})
+                self._send(404, {"error": "Route not found."})
         except PermissionError as exc:
             self.close_connection = True
             self._send(403, {"error": str(exc)})
@@ -495,7 +499,7 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
         except OSError as exc:
-            self._send(500, {"error": f"Erro local: {exc}"})
+            self._send(500, {"error": f"Local error: {exc}"})
 
 
 def main():
@@ -508,7 +512,7 @@ def main():
     app = Application(settings=settings)
     server = Server((settings["server"]["host"], args.port), app)
     print(f"Vorpal Web: http://127.0.0.1:{server.server_address[1]}", flush=True)
-    print("Painel local · TensorFlow CPU · Ctrl+C para encerrar", flush=True)
+    print("Local dashboard · TensorFlow CPU · Ctrl+C to stop", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

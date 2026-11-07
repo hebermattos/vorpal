@@ -1,0 +1,1 @@
+Uma aplicação recebe dados de pessoas e de outros sistemas. Esses dados devem ser validados antes do uso. Consultas a bancos de dados devem usar parâmetros. Os registros de diagnóstico não devem expor senhas nem códigos de acesso. Alterações precisam passar por revisão e testes. Dependências também exigem acompanhamento e atualização cuidadosa.

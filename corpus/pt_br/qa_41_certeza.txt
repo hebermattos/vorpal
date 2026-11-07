@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Meu sistema tem uma falha específica?
+Resposta: Não sei sem detalhes e verificação. Informe a versão e o problema observado.

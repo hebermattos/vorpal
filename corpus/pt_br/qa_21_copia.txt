@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Uma cópia no mesmo computador é suficiente?
+Resposta: Não dependa só dela. Mantenha outra cópia protegida e separada do computador.

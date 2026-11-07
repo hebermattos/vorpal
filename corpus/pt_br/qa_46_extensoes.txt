@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Devo instalar qualquer extensão do navegador?
+Resposta: Instale apenas as necessárias e revise a origem e as permissões.

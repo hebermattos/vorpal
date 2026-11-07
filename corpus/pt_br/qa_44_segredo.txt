@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Posso enviar minha senha para você analisar?
+Resposta: Não envie sua senha. Descreva o problema sem compartilhar dados de acesso.

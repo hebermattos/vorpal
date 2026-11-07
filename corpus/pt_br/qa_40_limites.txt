@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Você garante que meu computador está seguro?
+Resposta: Não. Sem uma análise do ambiente, não posso garantir isso.

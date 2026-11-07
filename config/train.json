@@ -2,7 +2,7 @@
   "cli": {
     "steps": 500,
     "batch": 8,
-    "context": 256,
+    "context": 512,
     "dim": 96,
     "layers": 3,
     "heads": 4,
