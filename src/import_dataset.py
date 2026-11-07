@@ -2,6 +2,7 @@
 
 No code execution, archive extraction to disk, crawling or OCR. Review all content and licenses.
 """
+
 import argparse
 import hashlib
 import ipaddress
@@ -18,19 +19,26 @@ import urllib.parse
 import urllib.request
 import zipfile
 from content_safety import SECRET_CONTENT
+from data import is_internal_file
 
-MAX_MEMBERS = 100
-MAX_RATIO = 100
-MAX_REDIRECTS = 3
+try:
+    from .config import load_config
+except ImportError:  # Script invocation.
+    from config import load_config
 
-CODE = {'.py', '.js', '.jsx', '.ts', '.tsx', '.java', '.kt', '.kts',
-        '.go', '.rs', '.c', '.h', '.cpp', '.hpp', '.cs', '.sh', '.nse'}
-DOCS = {'.txt', '.md', '.rst', '.html', '.htm', '.pdf', '.docx'}
-DATA = {'.json', '.jsonl', '.csv', '.xml', '.toml', '.yaml', '.yml'}
-SECURITY = {'.sarif', '.nessus', '.har'}
+SETTINGS = load_config("import_dataset")
+
+MAX_MEMBERS = SETTINGS["policy"]["max_members"]
+MAX_RATIO = SETTINGS["policy"]["max_ratio"]
+MAX_REDIRECTS = SETTINGS["policy"]["max_redirects"]
+
+CODE = set(SETTINGS["policy"]["code"])
+DOCS = set(SETTINGS["policy"]["docs"])
+DATA = set(SETTINGS["policy"]["data"])
+SECURITY = set(SETTINGS["policy"]["security"])
 SUPPORTED = CODE | DOCS | DATA | SECURITY
-SKIP_DIRS = {'.git', '.venv', 'node_modules', '__pycache__', 'dist', 'build'}
-SENSITIVE = re.compile(r'(^\.env|secret|credential|private[_-]?key|id_rsa|\.pem$|\.key$|password|token)', re.I)
+SKIP_DIRS = set(SETTINGS["policy"]["skip_dirs"])
+SENSITIVE = re.compile(SETTINGS["policy"]["sensitive"], re.I)
 class ExtractError(ValueError):
     pass
 
@@ -136,7 +144,7 @@ def extract_text(name, raw):
             except (ValueError, TypeError) as exc:
                 raise ExtractError('invalid JSON') from exc
     content = re.sub(r'\n{3,}', '\n\n', content).strip()
-    if len(content) < 50:
+    if len(content) < SETTINGS["runtime"]["min_text_length"]:
         raise ExtractError('insufficient extracted text')
     if SECRET_CONTENT.search(content):
         raise ExtractError('possible credential/secret found: review outside the importer')
@@ -222,9 +230,9 @@ def fetch_url(url):
     opener = urllib.request.build_opener(NoRedirect())
     for _ in range(MAX_REDIRECTS + 1):
         validate_url(url)
-        req = urllib.request.Request(url, headers={'User-Agent': 'VorpalDatasetImporter/1.0'})
+        req = urllib.request.Request(url, headers={'User-Agent': SETTINGS['runtime']['user_agent']})
         try:
-            response = opener.open(req, timeout=20)
+            response = opener.open(req, timeout=SETTINGS["runtime"]["timeout"])
         except urllib.error.HTTPError as exc:
             if exc.code not in (301, 302, 303, 307, 308):
                 raise
@@ -254,6 +262,8 @@ def import_one(name, raw, provenance, out):
     entries = iter_archive(name, raw) if classify(name) in {'zip', 'tar'} else [(name, raw)]
     for entry_name, blob in entries:
         try:
+            if is_internal_file(PurePosixPath(entry_name).name):
+                raise ExtractError('internal project metadata is not training content')
             safe_name(entry_name)
             content = extract_text(entry_name, blob)
             digest = hashlib.sha256(content.encode('utf-8')).hexdigest()
@@ -288,7 +298,7 @@ def collect_directory(root, *, used_sources=None, excluded_directory=None):
             continue
         if not path.is_file():
             continue
-        if path.name == 'import_report.json':
+        if is_internal_file(path.name):
             continue
         if path.name == 'url':
             try:
@@ -357,7 +367,7 @@ def import_sources(sources, rejected, out, *, used_sources=None):
             json.dumps({'accepted': accepted, 'rejected': rejected}, indent=2, ensure_ascii=False),
             encoding='utf-8')
     print(f'Imported: {len(accepted)}; rejected: {len(rejected)}', flush=True)
-    for item in rejected[:20]:
+    for item in rejected[:SETTINGS["runtime"]["rejected_preview_limit"]]:
         print('REJECTED:', item, flush=True)
     state_path = output / 'import_state.json'
     if used_sources:
@@ -369,7 +379,7 @@ def import_sources(sources, rejected, out, *, used_sources=None):
     return accepted, rejected
 
 
-def import_directory(root, out='corpus/imported', *, force=False):
+def import_directory(root, out=SETTINGS["functions"]["import_directory"]["out"], *, force=False):
     output = Path(out).resolve()
     state_path = output / 'import_state.json'
     used_sources = set()
@@ -399,7 +409,7 @@ def main(argv=None):
     group.add_argument('--file')
     group.add_argument('--directory')
     group.add_argument('--url')
-    p.add_argument('--out', default='corpus/imported')
+    p.add_argument('--out', default=SETTINGS["cli"]["out"])
     args = p.parse_args(argv)
     output = Path(args.out)
     sources = []

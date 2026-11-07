@@ -1,7 +1,14 @@
 """Shared content filters used by import and dataset preparation."""
+
 import re
 
+try:
+    from .config import load_config
+except ImportError:  # Script invocation.
+    from config import load_config
+
+SETTINGS = load_config("content_safety")
+
 SECRET_CONTENT = re.compile(
-    r'-----BEGIN [A-Z ]*PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9_]{20,}|'
-    r'AKIA[0-9A-Z]{16}|(?i:api[_-]?key|password|secret|token)\s*[:=]\s*["\x27]?[^\s"\x27]{8,}'
+    SETTINGS["secret_content"]
 )

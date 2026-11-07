@@ -1,0 +1,38 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8765
+  },
+  "runtime": {
+    "poll_ms": 1500,
+    "history_limit": 20,
+    "max_output_chars": 100000,
+    "max_request_bytes": 1048576,
+    "stop_grace_seconds": 5,
+    "log_dir": "logs/web",
+    "file_limit": 200,
+    "metrics_limit": 200
+  },
+  "limits": {
+    "steps": 100000,
+    "batch": 256,
+    "threads": 64,
+    "max_new": 4096,
+    "samples": 10000,
+    "prompt_chars": 8192
+  },
+  "profiles": [
+    {
+      "id": "complete",
+      "label": "Corpus completo",
+      "corpus": "corpus",
+      "out": "data"
+    },
+    {
+      "id": "python",
+      "label": "Exercícios Python",
+      "corpus": "corpus/python_basics",
+      "out": "data/python_basics"
+    }
+  ]
+}

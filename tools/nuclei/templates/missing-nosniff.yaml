@@ -1,0 +1,23 @@
+id: vorpal-missing-nosniff
+info:
+  name: Missing X-Content-Type-Options nosniff header
+  author: vorpal
+  severity: info
+  description: Indicates a hardening header was not observed; manual review is required.
+  tags: headers,misconfig
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    redirects: false
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: header
+        words:
+          - 'x-content-type-options: nosniff'
+        case-insensitive: true
+        negative: true

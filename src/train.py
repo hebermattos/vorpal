@@ -1,4 +1,5 @@
 """Train Vorpal entirely on CPU, using random byte windows and Keras AdamW."""
+
 import argparse
 import hashlib
 import json
@@ -9,14 +10,24 @@ import traceback
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime
 import numpy as np
+try:
+    from .config import load_config, configure_tensorflow_environment
+except ImportError:  # Script invocation.
+    from config import load_config, configure_tensorflow_environment
+
+configure_tensorflow_environment()
+
 import tensorflow as tf
 from tensorflow import keras
 from model import build_model, as_inputs, configure_cpu
 from data import prepare
 from import_dataset import import_directory
+from evaluate import validation_loss
 
-CHECKPOINT = Path("checkpoints/latest.keras")
-METADATA = Path("checkpoints/latest.json")
+SETTINGS = load_config("train")
+
+CHECKPOINT = Path(SETTINGS["policy"]["checkpoint"])
+METADATA = Path(SETTINGS["policy"]["metadata"])
 
 
 class Tee:
@@ -76,6 +87,9 @@ def run_with_log(args):
 
 def prepare_training_corpus(args):
     reset = getattr(args, "reset", False)
+    replay = getattr(args, "replay", False)
+    if replay and (reset or not CHECKPOINT.is_file() or not METADATA.is_file()):
+        raise ValueError("--replay requires an existing checkpoint and metadata, and cannot be combined with --reset")
     output = Path(args.out)
     state_path = output / "training_state.json"
     if reset:
@@ -84,7 +98,7 @@ def prepare_training_corpus(args):
         CHECKPOINT.unlink(missing_ok=True)
         METADATA.unlink(missing_ok=True)
     print(f"Importing corpus sources from {args.corpus}", flush=True)
-    import_directory(args.corpus, Path(args.corpus) / "imported", force=reset)
+    import_directory(args.corpus, Path(args.corpus) / SETTINGS["runtime"]["imported_subdir"], force=reset)
     print(f"Preparing training data in {args.out}", flush=True)
     used_hashes = set()
     if not reset and state_path.is_file():
@@ -110,11 +124,13 @@ def prepare_training_corpus(args):
                 save_training_state(output, used_hashes)
         except (json.JSONDecodeError, OSError):
             pass
-    prepare(args.corpus, output, exclude_hashes=used_hashes)
+    prepare(args.corpus, output, exclude_hashes=() if replay else used_hashes)
     manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
     args.training_hashes = manifest.get("train_document_hashes", []) + manifest.get("valid_document_hashes", [])
     if args.data is None:
         args.data = str(output / "train.bin")
+    if replay:
+        print("Replay requested: reusing the corpus and preserving the checkpoint and import history.", flush=True)
 
 
 def save_training_state(out, used_hashes):
@@ -147,6 +163,13 @@ def make_batch(data, context, batch, rng):
     y = np.stack([data[i+1:i+context+1] for i in starts]).astype("int32")
     return as_inputs(x), y
 
+
+def save_model_atomic(model, path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.stem + ".tmp.keras")
+    model.save(temporary)
+    os.replace(temporary, path)
+
 def run(args):
     if hasattr(args, "corpus"):
         prepare_training_corpus(args)
@@ -175,50 +198,102 @@ def run(args):
             raise ValueError("Model configuration does not match checkpoint; run with --reset to train using the new architecture")
         model = keras.models.load_model(CHECKPOINT)
         step_start = int(meta["step"])
+        if "rng_state" in meta:
+            rng.bit_generator.state = meta["rng_state"]
+        else:
+            rng = np.random.default_rng(np.random.SeedSequence([args.seed, step_start]))
     else:
         model = build_model(**config)
-        model.compile(optimizer=keras.optimizers.AdamW(learning_rate=args.lr, global_clipnorm=1.0),
+        model.compile(optimizer=keras.optimizers.AdamW(learning_rate=args.lr, global_clipnorm=SETTINGS["runtime"]["clipnorm"]),
                       loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True))
     CHECKPOINT.parent.mkdir(parents=True, exist_ok=True)
+    METADATA.parent.mkdir(parents=True, exist_ok=True)
+    validation_path = getattr(args, "validation_data", None)
+    if validation_path is None and hasattr(args, "out"):
+        validation_path = Path(args.out) / "valid.bin"
+    validation = load_bytes(validation_path) if validation_path and Path(validation_path).is_file() else None
+    if validation_path and getattr(args, "validation_data", None) and validation is None:
+        raise FileNotFoundError(f"Validation file not found: {validation_path}")
+    if validation is not None and len(validation) <= args.context + 1:
+        print("Validation skipped: held-out corpus is too short for this context.", flush=True)
+        validation = None
+    best_path = CHECKPOINT.with_name(SETTINGS["runtime"]["best_checkpoint_name"])
+    best_metadata = CHECKPOINT.with_name(SETTINGS["runtime"]["best_metadata_name"])
+    metrics_path = CHECKPOINT.with_name(SETTINGS["runtime"]["metrics_name"])
+    validation_id = hashlib.sha256(validation.tobytes()).hexdigest() if validation is not None else None
+    evaluation_config = {"validation_sha256": validation_id, "config": config,
+                         "samples": SETTINGS["runtime"]["validation_samples"],
+                         "seed": SETTINGS["runtime"]["validation_seed"]}
+    best_loss = float("inf")
+    if resume and best_metadata.is_file() and best_path.is_file():
+        previous = json.loads(best_metadata.read_text(encoding="utf-8"))
+        if all(previous.get(key) == value for key, value in evaluation_config.items()):
+            best_loss = float(previous["validation_loss"])
+    if resume and validation is not None and not np.isfinite(best_loss):
+        baseline = validation_loss(model, validation, samples=evaluation_config["samples"], seed=evaluation_config["seed"])
+        if np.isfinite(baseline):
+            best_loss = baseline
+            save_model_atomic(model, best_path)
+            temporary = best_metadata.with_suffix(".json.tmp")
+            temporary.write_text(json.dumps({"step": step_start, "validation_loss": best_loss,
+                                              **evaluation_config}, indent=2), encoding="utf-8")
+            temporary.replace(best_metadata)
+            print(f"Resumed checkpoint validation baseline: {baseline:.4f}", flush=True)
     print(f"TensorFlow/Keras CPU model: {model.count_params():,} parameters", flush=True)
     final_step = step_start + args.steps
     for step in range(step_start + 1, final_step + 1):
         inputs, targets = make_batch(data, args.context, args.batch, rng)
         loss = float(model.train_on_batch(inputs, targets))
-        if step == 1 or step % 50 == 0:
+        if step == 1 or step % SETTINGS["runtime"]["log_interval"] == 0:
             print(f"step={step} loss={loss:.4f}", flush=True)
-        if step % 100 == 0 or step == final_step:
-            temp = CHECKPOINT.with_name("latest.tmp.keras")
-            model.save(temp)
-            os.replace(temp, CHECKPOINT)
+        if validation is not None and (step % SETTINGS["runtime"]["validation_interval"] == 0 or step == final_step):
+            held_out_loss = validation_loss(model, validation,
+                                           samples=evaluation_config["samples"], seed=evaluation_config["seed"])
+            print(f"step={step} train_loss={loss:.4f} validation_loss={held_out_loss:.4f}", flush=True)
+            with metrics_path.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps({"step": step, "train_loss": loss,
+                                         "validation_loss": held_out_loss, **evaluation_config}) + "\n")
+            if np.isfinite(held_out_loss) and held_out_loss < best_loss:
+                best_loss = held_out_loss
+                save_model_atomic(model, best_path)
+                temporary = best_metadata.with_suffix(".json.tmp")
+                temporary.write_text(json.dumps({"step": step, "validation_loss": best_loss,
+                                                  **evaluation_config}, indent=2), encoding="utf-8")
+                temporary.replace(best_metadata)
+                print(f"Best validation checkpoint saved to {best_path}", flush=True)
+        if step % SETTINGS["runtime"]["checkpoint_interval"] == 0 or step == final_step:
+            save_model_atomic(model, CHECKPOINT)
             metadata_tmp = METADATA.with_suffix(".json.tmp")
-            metadata_tmp.write_text(json.dumps({"config": config, "step": step, "backend": "tensorflow"},
+            metadata_tmp.write_text(json.dumps({"config": config, "step": step, "backend": "tensorflow",
+                                               "rng_state": rng.bit_generator.state},
                                                indent=2), encoding="utf-8")
             os.replace(metadata_tmp, METADATA)
             if hasattr(args, "training_hashes"):
                 save_training_state(args.out, args.training_hashes)
-                print(f"Recorded {len(args.training_hashes)} newly used document(s).", flush=True)
+                print(f"Recorded {len(args.training_hashes)} processed document hash(es).", flush=True)
     print(f"Checkpoint saved to {CHECKPOINT}", flush=True)
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--steps", type=int, default=500)
-    p.add_argument("--batch", type=int, default=8)
-    p.add_argument("--context", type=int, default=256)
-    p.add_argument("--dim", type=int, default=96)
-    p.add_argument("--layers", type=int, default=3)
-    p.add_argument("--heads", type=int, default=4)
-    p.add_argument("--dropout", type=float, default=0.1)
-    p.add_argument("--threads", type=int, default=4)
-    p.add_argument("--lr", type=float, default=3e-4)
-    p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--corpus", default="corpus")
-    p.add_argument("--out", default="data")
-    p.add_argument("--log-dir", default="logs", help="Directory for timestamped training logs")
+    p.add_argument("--steps", type=int, default=SETTINGS["cli"]["steps"])
+    p.add_argument("--batch", type=int, default=SETTINGS["cli"]["batch"])
+    p.add_argument("--context", type=int, default=SETTINGS["cli"]["context"])
+    p.add_argument("--dim", type=int, default=SETTINGS["cli"]["dim"])
+    p.add_argument("--layers", type=int, default=SETTINGS["cli"]["layers"])
+    p.add_argument("--heads", type=int, default=SETTINGS["cli"]["heads"])
+    p.add_argument("--dropout", type=float, default=SETTINGS["cli"]["dropout"])
+    p.add_argument("--threads", type=int, default=SETTINGS["cli"]["threads"])
+    p.add_argument("--lr", type=float, default=SETTINGS["cli"]["lr"])
+    p.add_argument("--seed", type=int, default=SETTINGS["cli"]["seed"])
+    p.add_argument("--corpus", default=SETTINGS["cli"]["corpus"])
+    p.add_argument("--out", default=SETTINGS["cli"]["out"])
+    p.add_argument("--log-dir", default=SETTINGS["cli"]["log_dir"], help="Directory for timestamped training logs")
     p.add_argument("--data", default=None, help="Use this train file after importing and preparing the corpus")
+    p.add_argument("--validation-data", default=None, help="Override the held-out validation binary")
     mode = p.add_mutually_exclusive_group()
     mode.add_argument("--resume", action="store_true", help="Explicitly resume the existing checkpoint")
     mode.add_argument("--reset", action="store_true", help="Reimport and train the full corpus from step zero")
+    mode.add_argument("--replay", action="store_true", help="Train the same corpus again while resuming the existing checkpoint")
     args = p.parse_args()
     run_with_log(args)
 

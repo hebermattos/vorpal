@@ -1,0 +1,42 @@
+{
+  "cli": {
+    "corpus": "corpus",
+    "out": "data"
+  },
+  "policy": {
+    "ext": [
+      ".json",
+      ".md",
+      ".py",
+      ".sh",
+      ".txt",
+      ".yaml",
+      ".yml"
+    ],
+    "skip_dirs": [
+      ".git",
+      ".venv",
+      "__pycache__",
+      "build",
+      "checkpoints",
+      "dist",
+      "node_modules",
+      "venv"
+    ],
+    "skip_name": "(\\.env|secret|credential|private|id_rsa|\\.pem$|\\.key$|token|password)",
+    "skip_files": [
+      "import_report.json",
+      "import_state.json",
+      "training_state.json",
+      "manifest.json",
+      "split_state.json",
+      "latest.json",
+      "best.json",
+      "metrics.jsonl"
+    ]
+  },
+  "runtime": {
+    "min_text_length": 50,
+    "validation_fraction": 0.1
+  }
+}

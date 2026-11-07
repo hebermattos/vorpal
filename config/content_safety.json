@@ -1,0 +1,3 @@
+{
+  "secret_content": "-----BEGIN [A-Z ]*PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|(?i:api[_-]?key|password|secret|token)\\s*[:=]\\s*[\"\\x27]?[^\\s\"\\x27]{8,}"
+}

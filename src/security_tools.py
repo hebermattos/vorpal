@@ -1,0 +1,456 @@
+"""Model-proposed Nmap/Nuclei commands for explicitly authorized local targets.
+
+No shell evaluation, target lists, external templates, NSE scripts or automatic
+fallback commands. Planning and execution are separate, digest-bound steps.
+"""
+from __future__ import annotations
+
+import argparse
+from datetime import datetime, timezone
+import hashlib
+import ipaddress
+import json
+import os
+from pathlib import Path
+import re
+import secrets
+import shlex
+import shutil
+import subprocess
+import threading
+from urllib.parse import urlsplit, urlunsplit
+
+try:
+    from .config import load_config
+except ImportError:
+    from config import load_config
+
+ROOT = Path(__file__).resolve().parents[1]
+_LOCAL_NETWORKS = tuple(ipaddress.ip_network(value) for value in ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8', '169.254.0.0/16'))
+# Tool syntax/capability boundaries; selectable values and defaults live in JSON.
+_BOOLEAN_FLAGS = {'nmap': {'-sT', '-sV', '--version-light', '-Pn', '-F', '--reason', '--open'}, 'nuclei': set()}
+_VALUE_FLAGS = {'nmap': {'-p': 'ports', '--top-ports': 'count', '-T': 'timing'}, 'nuclei': {'-t': 'templates'}}
+
+
+class ToolPlanError(ValueError):
+    def __init__(self, message, *, response=None):
+        super().__init__(message)
+        self.response = response
+
+
+def _time():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _inside(root, raw):
+    path = (Path(root).resolve() / raw).resolve()
+    if not path.is_relative_to(Path(root).resolve()):
+        raise ToolPlanError('O caminho deve permanecer dentro do projeto.')
+    return path
+
+
+def _settings(settings):
+    return settings if settings is not None else load_config('security_tools')
+
+
+def _private_ip(value):
+    try:
+        address = ipaddress.IPv4Address(value)
+    except (ValueError, TypeError) as exc:
+        raise ToolPlanError('Informe um único IPv4 local literal; nomes, redes CIDR e listas não são aceitos.') from exc
+    if not any(address in network for network in _LOCAL_NETWORKS):
+        raise ToolPlanError('O alvo deve pertencer a uma rede privada, loopback ou link-local.')
+    if address.is_unspecified or address.is_multicast or address.is_reserved:
+        raise ToolPlanError('Endereço especial não permitido.')
+    return str(address)
+
+
+def validate_target(tool, target):
+    if not isinstance(target, str) or not target or any(char.isspace() for char in target):
+        raise ToolPlanError('Informe um alvo local sem espaços.')
+    if tool == 'nmap':
+        return _private_ip(target)
+    if tool != 'nuclei':
+        raise ToolPlanError('Ferramenta desconhecida.')
+    try:
+        parsed = urlsplit(target)
+        if (parsed.scheme not in {'http', 'https'} or parsed.username is not None or parsed.password is not None
+                or parsed.query or parsed.fragment or parsed.path not in {'', '/'}):
+            raise ValueError('Use somente a origem HTTP(S), sem credenciais, caminhos ou parâmetros.')
+        host = _private_ip(parsed.hostname)
+        port = parsed.port
+        if port is not None and not 1 <= port <= 65535:
+            raise ValueError('Porta fora do intervalo válido.')
+        authority = host + (f':{port}' if port is not None else '')
+        return urlunsplit((parsed.scheme, authority, '', '', ''))
+    except (ValueError, TypeError) as exc:
+        raise ToolPlanError(f'Alvo Nuclei inválido: {exc}') from exc
+
+
+def _pinned(root, raw, expected):
+    path = _inside(root, raw)
+    if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+        raise ToolPlanError(f'Arquivo local ausente ou alterado desde a revisão: {raw}')
+    return path
+
+
+def tool_status(settings=None):
+    settings = _settings(settings)
+    return [{'id': name, 'installed': shutil.which(spec['executable']) is not None,
+             'executable': shutil.which(spec['executable']),
+             'flags': spec['flags'] + list(spec['values'])}
+            for name, spec in settings['tools'].items()]
+
+
+def validate_arguments(tool, args, *, settings=None):
+    settings = _settings(settings)
+    if tool not in _VALUE_FLAGS or tool not in settings['tools']:
+        raise ToolPlanError('Ferramenta desconhecida.')
+    if (not isinstance(args, list) or not args or len(args) > settings['runtime']['max_args']
+            or any(not isinstance(value, str) or not value or not value.isascii() for value in args)):
+        raise ToolPlanError('O modelo deve retornar uma lista limitada de argumentos ASCII.')
+    spec = settings['tools'][tool]
+    if not set(spec['flags']) <= _BOOLEAN_FLAGS[tool] or any(_VALUE_FLAGS[tool].get(key) != value for key, value in spec['values'].items()):
+        raise ToolPlanError('O catálogo contém opções fora das capacidades suportadas.')
+    normalized = []
+    seen = set()
+    index = 0
+    while index < len(args):
+        flag = args[index]
+        if tool == 'nmap' and re.fullmatch(r'-T[23]', flag):
+            # Accept Nmap's usual compact timing spelling, then validate it normally.
+            args = args[:index] + ['-T', flag[2:]] + args[index + 1:]
+            flag = '-T'
+        if flag in seen:
+            raise ToolPlanError(f'Opção repetida: {flag}')
+        seen.add(flag)
+        if flag in spec['flags']:
+            normalized.append(flag)
+            index += 1
+            continue
+        kind = spec['values'].get(flag)
+        if kind is None or index + 1 >= len(args):
+            raise ToolPlanError(f'Opção não permitida ou sem valor: {flag}')
+        value = args[index + 1]
+        if kind == 'ports':
+            if not re.fullmatch(r'[0-9]+(?:,[0-9]+)*', value):
+                raise ToolPlanError('As portas devem ser números separados por vírgula.')
+            ports = [int(item) for item in value.split(',')]
+            if len(ports) > settings['runtime']['max_ports'] or any(not 1 <= port <= 65535 for port in ports) or len(set(ports)) != len(ports):
+                raise ToolPlanError('Lista de portas inválida, repetida ou acima do limite.')
+            value = ','.join(map(str, ports))
+        elif kind == 'count':
+            if not value.isdecimal() or not 1 <= int(value) <= settings['runtime']['max_ports']:
+                raise ToolPlanError('Quantidade de portas fora do limite configurado.')
+            value = str(int(value))
+        elif kind == 'timing':
+            if value not in {'2', '3'}:
+                raise ToolPlanError('Somente os níveis de temporização T2 e T3 são permitidos.')
+        elif kind == 'templates':
+            identifiers = value.split(',')
+            allowed = {entry['id'] for entry in settings['templates']}
+            if not set(identifiers) <= allowed or len(set(identifiers)) != len(identifiers):
+                raise ToolPlanError('Selecione somente IDs de templates locais revisados.')
+        normalized.extend([flag, value])
+        index += 2
+    if tool == 'nmap':
+        selections = len(seen & {'-p', '--top-ports', '-F'})
+        if selections != 1:
+            raise ToolPlanError('O modelo deve selecionar uma única lista de portas, --top-ports ou -F.')
+        if '-F' in seen and settings['runtime']['max_ports'] < 100:
+            raise ToolPlanError('O modo -F excede o limite configurado de portas.')
+        if '--version-light' in seen and '-sV' not in seen:
+            raise ToolPlanError('--version-light requer -sV.')
+    elif '-t' not in seen:
+        raise ToolPlanError('O Nuclei requer uma seleção explícita de templates revisados.')
+    return normalized
+
+
+def _validate_runtime_policy(tool, tokens):
+    """Keep configuration from adding targets, uploads, scripts or arbitrary files."""
+    boolean = {'nmap': {'--unprivileged', '-n'},
+               'nuclei': {'-disable-update-check', '-no-interactsh', '-disable-redirects', '-no-stdin',
+                          '-omit-raw', '-omit-template', '-no-color', '-jsonl'}}[tool]
+    valued = {'nmap': {'--max-rate', '--max-retries', '--host-timeout', '-oX'},
+              'nuclei': {'-rate-limit', '-concurrency', '-timeout', '-retries', '-type'}}[tool]
+    found = set()
+    index = 0
+    while index < len(tokens):
+        flag = tokens[index]
+        if flag in found:
+            raise ToolPlanError('Política de execução contém opções repetidas.')
+        found.add(flag)
+        index += 1
+        if flag in boolean:
+            continue
+        if flag not in valued or index == len(tokens):
+            raise ToolPlanError('Política de execução contém uma opção não suportada.')
+        value = tokens[index]
+        index += 1
+        if flag == '-oX':
+            valid = value == '-'
+        elif flag == '-type':
+            valid = value == 'http'
+        elif flag == '--host-timeout':
+            valid = bool(re.fullmatch(r'[1-9][0-9]*s', value))
+        else:
+            valid = value.isdecimal() and int(value) >= (0 if flag in {'--max-retries', '-retries'} else 1)
+        if not valid:
+            raise ToolPlanError(f'Valor inválido na política de execução: {flag}')
+    if found != boolean | valued:
+        raise ToolPlanError('A política deve manter todas as opções de escopo, limites e isolamento.')
+
+
+def build_command(tool, target, args, *, settings=None, root=ROOT):
+    settings = _settings(settings)
+    target = validate_target(tool, target)
+    normalized = validate_arguments(tool, args, settings=settings)
+    spec = settings['tools'][tool]
+    _validate_runtime_policy(tool, spec['required'])
+    executable = shutil.which(spec['executable'])
+    if executable is None:
+        raise ToolPlanError(f'{tool} não foi encontrado no PATH. Instale a ferramenta separadamente.')
+    translated = list(normalized)
+    if tool == 'nuclei':
+        registry = {entry['id']: entry for entry in settings['templates']}
+        index = translated.index('-t') + 1
+        translated[index] = ','.join(str(_pinned(root, registry[name]['path'], registry[name]['sha256'])) for name in translated[index].split(','))
+        config = _pinned(root, settings['runtime']['nuclei_config'], settings['runtime']['nuclei_config_sha256'])
+        return [executable, '-config', str(config), *translated, *spec['required'], '-target', target]
+    return [executable, *translated, *spec['required'], target]
+
+
+def _settings_digest(settings):
+    return hashlib.sha256(json.dumps(settings, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def plan_digest(plan):
+    fields = ('tool', 'target', 'goal', 'args', 'reason', 'argv', 'command', 'settings_sha256')
+    return hashlib.sha256(json.dumps({field: plan[field] for field in fields}, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()).hexdigest()
+
+
+def proposal_from_response(tool, target, goal, response, *, settings=None, root=ROOT):
+    """Validate generated JSON and bind the exact command shown for review."""
+    settings = _settings(settings)
+    target = validate_target(tool, target)
+    try:
+        payload = json.loads(response)
+        if not isinstance(payload, dict) or set(payload) != {'args', 'reason'}:
+            raise ToolPlanError('A resposta deve conter somente args e reason.')
+        reason = payload['reason']
+        if not isinstance(reason, str) or not reason.strip() or len(reason) > settings['runtime']['max_reason_chars'] or not reason.isprintable():
+            raise ToolPlanError('Justificativa do modelo inválida.')
+        args = validate_arguments(tool, payload['args'], settings=settings)
+        argv = build_command(tool, target, args, settings=settings, root=root)
+    except (ValueError, TypeError, KeyError) as exc:
+        raise ToolPlanError(f'Proposta do modelo rejeitada: {exc}') from exc
+    plan = {'status': 'ready', 'tool': tool, 'target': target, 'goal': goal,
+            'args': args, 'reason': reason, 'argv': argv, 'settings_sha256': _settings_digest(settings)}
+    plan['command'] = shlex.join(argv)
+    plan['digest'] = plan_digest(plan)
+    return plan
+
+
+def planning_prompt(tool, target, goal, context, *, settings=None):
+    settings = _settings(settings)
+    prefix = settings['planner']['instruction'] + settings['planner'][tool]
+    suffix = settings['planner']['answer_prefix']
+    used_goal = goal
+    while True:
+        prompt = prefix + json.dumps({'target': target, 'goal': used_goal}, ensure_ascii=False) + suffix
+        if len(prompt.encode('utf-8')) <= context:
+            return prompt, used_goal
+        if not used_goal:
+            raise ToolPlanError('O contexto do checkpoint é curto demais para o formato de planejamento.')
+        used_goal = used_goal[:-1]
+
+
+def propose(tool, target, goal, *, model=None, settings=None, root=ROOT):
+    settings = _settings(settings)
+    target = validate_target(tool, target)
+    if not isinstance(goal, str) or not goal.strip() or len(goal) > settings['runtime']['max_goal_chars'] or not goal.isprintable():
+        raise ToolPlanError('Informe um objetivo curto, em uma única linha.')
+    if model is None:
+        raise ToolPlanError('Um checkpoint treinado é obrigatório para propor comandos.')
+    context = model.get_layer('position_embedding').input_dim
+    prompt, used_goal = planning_prompt(tool, target, goal, context, settings=settings)
+    try:
+        from .generate import generate
+    except ImportError:
+        from generate import generate
+    output = generate(model, prompt, **settings['generation'], stop_on_json=True)
+    response = output[len(prompt):]
+    try:
+        plan = proposal_from_response(tool, target, goal, response, settings=settings, root=root)
+    except ToolPlanError as exc:
+        raise ToolPlanError(str(exc), response=response) from exc
+    plan.update(goal_used=used_goal, goal_truncated=used_goal != goal, model_response=response)
+    return plan
+
+
+def _directory(root, settings, kind):
+    path = _inside(root, settings['runtime']['reports_dir']) / kind
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def write_report(value, kind, *, settings=None, root=ROOT):
+    settings = _settings(settings)
+    identifier = secrets.token_hex(12)
+    result = {**value, 'id': identifier, 'created_at': _time()}
+    path = _directory(root, settings, kind) / f'{identifier}.json'
+    path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding='utf-8')
+    return result
+
+
+def read_plan(identifier, *, settings=None, root=ROOT):
+    settings = _settings(settings)
+    if not isinstance(identifier, str) or not re.fullmatch(r'[a-f0-9]{24}', identifier):
+        raise ToolPlanError('Identificador de plano inválido.')
+    path = _directory(root, settings, 'plans') / f'{identifier}.json'
+    if path.is_symlink():
+        raise ToolPlanError('O plano não pode ser um link simbólico.')
+    try:
+        value = json.loads(path.read_text(encoding='utf-8'))
+        if not isinstance(value, dict):
+            raise ValueError('Expected an object')
+        return value
+    except (OSError, ValueError) as exc:
+        raise ToolPlanError(f'Não foi possível ler o plano: {exc}') from exc
+
+
+def reviewed_command(plan, digest, *, authorized=False, settings=None, root=ROOT):
+    settings = _settings(settings)
+    if authorized is not True:
+        raise ToolPlanError('Confirme a autorização para testar o alvo local.')
+    if not isinstance(digest, str) or not re.fullmatch(r'[a-f0-9]{64}', digest):
+        raise ToolPlanError('Informe o digest do comando revisado.')
+    try:
+        if plan['status'] != 'ready' or not secrets.compare_digest(plan_digest(plan), digest) or plan['digest'] != digest:
+            raise ToolPlanError('O plano foi alterado ou não está pronto. Gere e revise uma nova proposta.')
+        if plan['settings_sha256'] != _settings_digest(settings):
+            raise ToolPlanError('A configuração mudou. Gere e revise uma nova proposta.')
+        argv = build_command(plan['tool'], plan['target'], plan['args'], settings=settings, root=root)
+        if argv != plan['argv']:
+            raise ToolPlanError('O executável ou comando mudou. Gere uma nova proposta.')
+        return argv
+    except (KeyError, TypeError) as exc:
+        raise ToolPlanError('O plano salvo está incompleto ou inválido.') from exc
+
+
+def execute_plan(plan, digest, *, authorized=False, settings=None, root=ROOT):
+    settings = _settings(settings)
+    argv = reviewed_command(plan, digest, authorized=authorized, settings=settings, root=root)
+    print('Executando comando revisado:', shlex.join(argv), flush=True)
+    output = ''
+    truncated = False
+    timed_out = threading.Event()
+    started = _time()
+    process = subprocess.Popen(argv, cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
+    def deadline():
+        try:
+            process.wait(timeout=settings['runtime']['timeout_seconds'])
+        except subprocess.TimeoutExpired:
+            timed_out.set()
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                return
+            try:
+                process.wait(timeout=settings['runtime']['stop_grace_seconds'])
+            except subprocess.TimeoutExpired:
+                process.kill()
+    watcher = threading.Thread(target=deadline, daemon=True)
+    watcher.start()
+    cancelled = False
+    try:
+        for line in process.stdout:
+            print(line, end='', flush=True)
+            combined = output + line
+            truncated = truncated or len(combined) > settings['runtime']['max_output_chars']
+            output = combined[-settings['runtime']['max_output_chars']:]
+        code = process.wait()
+    except KeyboardInterrupt:
+        cancelled = True
+        process.terminate()
+        try:
+            code = process.wait(timeout=settings['runtime']['stop_grace_seconds'])
+        except subprocess.TimeoutExpired:
+            process.kill()
+            code = process.wait()
+    finally:
+        process.stdout.close()
+        watcher.join(timeout=settings['runtime']['stop_grace_seconds'] + 1)
+    report = write_report({'plan_id': plan['id'], 'tool': plan['tool'], 'target': plan['target'],
+                           'argv': argv, 'started_at': started, 'returncode': code, 'output': output,
+                           'output_truncated': truncated, 'status': 'cancelled' if cancelled else 'timed_out' if timed_out.is_set() else 'completed' if code == 0 else 'failed'},
+                          'executions', settings=settings, root=root)
+    print('\nRelatório:', report['id'], report['status'], flush=True)
+    return report
+
+
+def latest_plan(*, settings=None, root=ROOT):
+    settings = _settings(settings)
+    directory = _inside(root, settings['runtime']['reports_dir']) / 'plans'
+    if not directory.is_dir():
+        return None
+    paths = sorted(directory.glob('*.json'), key=lambda path: path.stat().st_mtime, reverse=True)
+    for path in paths:
+        if re.fullmatch(r'[a-f0-9]{24}', path.stem) and not path.is_symlink():
+            try:
+                value = json.loads(path.read_text(encoding='utf-8'))
+                if isinstance(value, dict):
+                    return value
+            except (OSError, ValueError):
+                continue
+    return None
+
+
+def main():
+    settings = load_config('security_tools')
+    parser = argparse.ArgumentParser(description=__doc__)
+    modes = parser.add_subparsers(dest='mode', required=True)
+    planner = modes.add_parser('plan', help='Solicitar ao modelo uma proposta, sem executar a ferramenta')
+    planner.add_argument('--tool', choices=tuple(settings['tools']), required=True)
+    planner.add_argument('--target', required=True)
+    planner.add_argument('--goal', required=True)
+    planner.add_argument('--checkpoint', default=load_config('train')['policy']['checkpoint'])
+    planner.add_argument('--threads', type=int, default=settings['cli']['threads'])
+    runner = modes.add_parser('run', help='Executar somente um plano já revisado')
+    runner.add_argument('--plan-id', required=True)
+    runner.add_argument('--digest', required=True)
+    runner.add_argument('--authorized', action='store_true')
+    args = parser.parse_args()
+    try:
+        if args.mode == 'run':
+            plan = read_plan(args.plan_id, settings=settings)
+            report = execute_plan(plan, args.digest, authorized=args.authorized, settings=settings)
+            raise SystemExit(0 if report['status'] == 'completed' else 1)
+        target = validate_target(args.tool, args.target)
+        if not isinstance(args.goal, str) or not args.goal.strip() or len(args.goal) > settings['runtime']['max_goal_chars'] or not args.goal.isprintable():
+            raise ToolPlanError('Objetivo inválido.')
+        try:
+            from .model import configure_cpu
+        except ImportError:
+            from model import configure_cpu
+        from tensorflow import keras
+        configure_cpu(args.threads)
+        model = keras.models.load_model(args.checkpoint, compile=False)
+        try:
+            plan = propose(args.tool, target, args.goal, model=model, settings=settings)
+        except (ToolPlanError, RuntimeError) as exc:
+            plan = {'status': 'rejected', 'tool': args.tool, 'target': target, 'goal': args.goal,
+                    'error': str(exc), 'model_response': getattr(exc, 'response', None)}
+        plan = write_report(plan, 'plans', settings=settings)
+        print(json.dumps(plan, indent=2, ensure_ascii=False), flush=True)
+        if plan['status'] != 'ready':
+            raise SystemExit(2)
+        print('Comando para revisão:', plan['command'], flush=True)
+        print(f"Execute após revisar: python src/security_tools.py run --plan-id {plan['id']} --digest {plan['digest']} --authorized", flush=True)
+    except (ToolPlanError, OSError, ValueError) as exc:
+        parser.exit(2, f'Erro: {exc}\n')
+
+
+if __name__ == '__main__':
+    main()

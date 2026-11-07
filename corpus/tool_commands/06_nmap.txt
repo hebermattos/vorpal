@@ -1,0 +1,4 @@
+Return JSON only: {"args":["flag","value"],"reason":"why"}. No targets, shell, files or scripts in args.
+Nmap TCP; use -p or --top-ports.
+{"target": "192.168.1.10", "goal": "Ver somente serviços web abertos."}
+Answer: {"args": ["-sT", "-sV", "--open", "-p", "80,443,8080"], "reason": "Restringir a análise às portas web selecionadas e abertas."}

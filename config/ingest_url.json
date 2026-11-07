@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "import_url": {
+      "destination": "corpus/imported"
+    }
+  }
+}

@@ -1,4 +1,5 @@
 """Backward-compatible URL import interface backed by the canonical dataset importer."""
+
 from pathlib import Path
 import sys
 from import_dataset import (
@@ -12,13 +13,20 @@ from import_dataset import (
 )
 from import_dataset import main as importer_main
 
+try:
+    from .config import load_config
+except ImportError:  # Script invocation.
+    from config import load_config
+
+SETTINGS = load_config("ingest_url")
+
 
 def fetch(url):
     name, raw, final_url = fetch_url(url)
     return final_url, extract_text(name, raw)
 
 
-def import_url(url, destination='corpus/imported'):
+def import_url(url, destination=SETTINGS["functions"]["import_url"]["destination"]):
     name, raw, final_url = fetch_url(url)
     accepted, rejected = import_one(name, raw, final_url, destination)
     if not accepted:
@@ -36,4 +44,3 @@ if __name__ == '__main__':
     main()
 
 # Keep this adapter's imported names available to legacy callers.
-

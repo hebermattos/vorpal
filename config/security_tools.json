@@ -1,0 +1,98 @@
+{
+  "cli": {
+    "threads": 4
+  },
+  "generation": {
+    "max_new": 384,
+    "temperature": 0.2,
+    "seed": 42
+  },
+  "runtime": {
+    "reports_dir": "reports/security_tools",
+    "max_goal_chars": 1024,
+    "max_args": 32,
+    "max_reason_chars": 1000,
+    "max_output_chars": 100000,
+    "timeout_seconds": 180,
+    "stop_grace_seconds": 5,
+    "max_ports": 1000,
+    "nuclei_config": "tools/nuclei/config.yaml",
+    "nuclei_config_sha256": "b12e8720b3a3931057ba4add19ab3f2ab40bd91a81a8e349d064b29fb71374d7"
+  },
+  "planner": {
+    "instruction": "Return JSON only: {\"args\":[\"flag\",\"value\"],\"reason\":\"why\"}. No targets, shell, files or scripts in args.\n",
+    "nmap": "Nmap TCP; use -p or --top-ports.\n",
+    "nuclei": "Nuclei; choose -t server-header or missing-nosniff.\n",
+    "answer_prefix": "\nAnswer: "
+  },
+  "tools": {
+    "nmap": {
+      "executable": "nmap",
+      "flags": [
+        "-sT",
+        "-sV",
+        "--version-light",
+        "-Pn",
+        "-F",
+        "--reason",
+        "--open"
+      ],
+      "values": {
+        "-p": "ports",
+        "--top-ports": "count",
+        "-T": "timing"
+      },
+      "required": [
+        "--unprivileged",
+        "-n",
+        "--max-rate",
+        "50",
+        "--max-retries",
+        "1",
+        "--host-timeout",
+        "120s",
+        "-oX",
+        "-"
+      ]
+    },
+    "nuclei": {
+      "executable": "nuclei",
+      "flags": [],
+      "values": {
+        "-t": "templates"
+      },
+      "required": [
+        "-disable-update-check",
+        "-no-interactsh",
+        "-disable-redirects",
+        "-no-stdin",
+        "-omit-raw",
+        "-omit-template",
+        "-no-color",
+        "-jsonl",
+        "-rate-limit",
+        "5",
+        "-concurrency",
+        "1",
+        "-timeout",
+        "5",
+        "-retries",
+        "0",
+        "-type",
+        "http"
+      ]
+    }
+  },
+  "templates": [
+    {
+      "id": "server-header",
+      "path": "tools/nuclei/templates/server-header.yaml",
+      "sha256": "39060c0eb4b1433e249a70e8a42721333485621d91a96660912c0ac106def47c"
+    },
+    {
+      "id": "missing-nosniff",
+      "path": "tools/nuclei/templates/missing-nosniff.yaml",
+      "sha256": "33a14acb886828315db423b93bc6a9c6aa317819d6af4e66ecaea6575816abf5"
+    }
+  ]
+}
