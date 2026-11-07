@@ -3,6 +3,7 @@ import json
 import sys
 import tarfile
 import tempfile
+import types
 import unittest
 import zipfile
 from pathlib import Path
@@ -81,6 +82,23 @@ class ImportTests(unittest.TestCase):
         pdf=io.BytesIO(); writer.write(pdf)
         with self.assertRaises(ExtractError):
             extract_text('empty.pdf',pdf.getvalue())
+
+    def test_large_text_document_is_not_size_limited(self):
+        text = ('Security guidance validates untrusted input before processing.\n' * 180000).encode()
+        self.assertGreater(len(text), 8 * 1024 * 1024)
+        self.assertGreater(len(extract_text('large.txt', text)), 8 * 1024 * 1024)
+
+    def test_pdf_over_100_pages_is_extracted(self):
+        page_text = 'Security guidance validates input and protects web applications.'
+        fake_reader = lambda *_args, **_kwargs: types.SimpleNamespace(
+            is_encrypted=False,
+            pages=[types.SimpleNamespace(extract_text=lambda: page_text) for _ in range(101)],
+        )
+        fake_pypdf = types.ModuleType('pypdf')
+        fake_pypdf.PdfReader = fake_reader
+        with patch.dict(sys.modules, {'pypdf': fake_pypdf}):
+            content = extract_text('large.pdf', b'%PDF-fixture')
+        self.assertEqual(content.count(page_text), 101)
 
 if __name__ == '__main__':
     unittest.main()

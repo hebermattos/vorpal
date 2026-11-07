@@ -1,15 +1,15 @@
-# Vorpal — IA local em TensorFlow/Keras
+# Vorpal — Local AI with TensorFlow/Keras
 
-Vorpal é um projeto educacional de modelo autoregressivo **treinado do zero**, especializado experimentalmente em dados de programação e cibersegurança defensiva. O backend de treinamento e inferência é **TensorFlow/Keras na CPU**, sem PyTorch ou modelos pré-treinados.
+Vorpal is an educational autoregressive model project **trained from scratch**, experimentally specialized in programming data and defensive cybersecurity. The training and inference backend is **TensorFlow/Keras on CPU**, without PyTorch or pre-trained models.
 
-> Protótipo de pesquisa: contexto de apenas 128 **bytes** por padrão e poucos parâmetros. Não é um detector confiável de vulnerabilidades e não substitui revisão de segurança.
+> Research prototype: default context window of only 128 **bytes** and a small parameter count. It is not a reliable vulnerability detector and does not replace security review.
 
-## Ambiente
+## Environment
 
-- Python 3.11 recomendado (Linux/Ubuntu/WSL).
-- Somente CPU; recomendado cerca de 8 GB de RAM para o modelo padrão.
-- TensorFlow 2.16+ e Keras 3 via `tf.keras` (consulte `requirements.txt`).
-- Instalação limpa é recomendada durante a migração.
+- Python 3.11 recommended (Linux/Ubuntu/WSL).
+- CPU only; about 8 GB of RAM is recommended for the default model.
+- TensorFlow 2.16+ and Keras 3 via `tf.keras` (see `requirements.txt`).
+- A clean install is recommended during migration.
 
 ```bash
 git clone https://github.com/hebermattos/vorpal.git
@@ -20,84 +20,97 @@ python -m pip install -U pip
 python -m pip install -r requirements.txt
 ```
 
-## Importação dos datasets — preservada
+## Dataset import — preserved
 
-O importador continua **independente do backend de treinamento** e aceita código-fonte (.py, .js, .ts, .java, .kt, .go, .rs, .c, .cpp, .sh, .nse), documentação (.pdf, .docx, .md, .rst, .html, .txt), dados (.json, .jsonl, .csv, .xml, .toml, .yaml) e arquivos de segurança (.sarif, .nessus, .har), inclusive projetos ZIP/TAR.GZ.
+The importer remains **independent of the training backend** and accepts source code (.py, .js, .ts, .java, .kt, .go, .rs, .c, .cpp, .sh, .nse), documentation (.pdf, .docx, .md, .rst, .html, .txt), data (.json, .jsonl, .csv, .xml, .toml, .yaml), and security files (.sarif, .nessus, .har), including ZIP/TAR.GZ projects.
 
 ```bash
-python src/import_dataset.py --file ./documento.pdf
-python src/import_dataset.py --directory ./meus-dados
+python src/import_dataset.py --file ./document.pdf
+python src/import_dataset.py --directory ./my-data
 python src/import_dataset.py --url https://example.org/documentation.html
 ```
 
-### Arquivos `url` nas pastas
+### `url` files inside folders
 
-Dentro de `./meus-dados` ou qualquer subpasta, coloque arquivo chamado exatamente **`url`** (sem extensão), UTF-8, com uma URL HTTP(S) pública por linha:
+Inside `./my-data` or any subfolder, place a file named exactly **`url`** (no extension), UTF-8 encoded, with one public HTTP(S) URL per line:
 
 ```text
-# documentação autorizada
+# authorized documentation
 https://docs.python.org/3/library/secrets.html
-https://example.org/guia.pdf
+https://example.org/guide.pdf
 ```
 
-`--directory` importa documentos locais, arquivos compactados e URLs de todas as subpastas. URLs repetidas na mesma execução são desduplicadas. Falhas são registradas em `corpus/imported/import_report.json` sem interromper os demais downloads. O arquivo `url` não vira texto de treinamento.
+`--directory` imports local documents, compressed archives, and URLs from all subfolders. Duplicate URLs are deduplicated within the same run. Failures are recorded in `corpus/imported/import_report.json` without stopping other downloads. The `url` file is not turned into training text. The importer prints each file and URL as it is processed.
 
-**Segurança:** valide licença e autorização, revise dados pessoais e segredos; os filtros são heurísticos. Limites: 8 MiB por arquivo, 100 URLs por lista e 250 por importação. O bloqueio de endereços privados por verificação DNS não elimina o risco de DNS rebinding; use isolamento de rede com fontes não confiáveis. Não há execução de conteúdo baixado ou OCR.
+**Security:** validate licensing and authorization, review personal data and secrets; the filters are heuristic. There is no per-file, download, URL-list, or PDF-page size limit, so only use trusted sources and ensure sufficient memory and disk space. Archives still have member-count and compression-ratio safeguards. Blocking private addresses by DNS verification does not eliminate DNS rebinding risk; use network isolation with untrusted sources. Downloaded content is never executed and OCR is not performed.
 
-## Preparar, treinar, avaliar e gerar
+## Prepare, train, evaluate, and generate
 
 ```bash
-python src/data.py --corpus corpus --out data
 python src/train.py --steps 500 --batch 8 --threads 4
 python src/evaluate.py --samples 50 --threads 4
 python src/generate.py --prompt "def validate_port(" --max-new 160 --threads 4
 ```
 
-`src/data.py` prepara arquivos de texto e divide por documentos. Saídas `data/train.bin` e `data/valid.bin` mantêm o **mesmo formato de bytes anterior**. Treinamento ajusta pesos totalmente aleatórios, com tokenização de 256 bytes UTF-8, atenção causal, AdamW e clipping de gradiente.
+`src/train.py` imports new local supported files and public URLs listed in `corpus/**/url`, prints each source to the console, prepares only documents not previously used, and incrementally resumes the existing checkpoint. Import failures are recorded in `corpus/imported/import_report.json`; successful extracted text is included in the generated dataset. Each run's `--steps` value is the number of additional optimization steps. Use `--reset` to force reimport all sources, clear training history and checkpoints, and train the full corpus from step zero. To prepare data without starting training, run `python src/data.py --corpus corpus --out data`. Outputs `data/train.bin` and `data/valid.bin` keep the **same byte format as before**. Training uses byte-level tokenization (256 possible byte values), causal attention, AdamW, and gradient clipping.
 
-Arquitetura padrão: 3 blocos Transformer, largura 96, quatro cabeças de atenção, contexto de 128 bytes. Argumentos `--dim`, `--heads`, `--layers`, `--context`, `--batch` e `--steps` permitem reduzir consumo de CPU/RAM.
+Each training command saves console output and Python errors to a timestamped file under `logs/` while continuing to display them in the terminal. Use `--log-dir PATH` to choose another log folder.
 
-O checkpoint fica em `checkpoints/latest.keras` (modelo e estado do otimizador) e `checkpoints/latest.json` (configuração e passo). Para continuar:
+Successful imports are recorded in `corpus/imported/import_state.json`; training-consumed document hashes are stored in `data/training_state.json`. Later runs skip the same URLs, unchanged local files, and documents already consumed by training; changed files are imported and trained as new content. Failed imports are retried on the next run.
 
-```bash
-python src/train.py --steps 1000 --batch 8 --threads 4 --resume
-```
+Default architecture: 3 Transformer blocks, width 96, four attention heads, context of 256 bytes. The longer context lets the model use more surrounding code, while increasing attention compute and memory. Arguments `--dim`, `--heads`, `--layers`, `--context`, `--batch`, and `--steps` allow reducing CPU/RAM usage. Existing checkpoints with the old context are incompatible; run once with `--reset` to start the new architecture from scratch.
 
-Ao retomar, a configuração da arquitetura deve ser idêntica. O checkpoint recupera o estado do otimizador, mas o gerador aleatório de amostras não é restaurado bit a bit.
-
-### Migração de PyTorch
-
-Checkpoints antigos `checkpoints/latest.pt` **não são compatíveis** com Keras e **não são convertidos** automaticamente. Preserve backups dos checkpoints antigos e execute novo treinamento, sem usar `--resume` na primeira execução TensorFlow. Os importadores, o corpus e `data/*.bin` continuam compatíveis.
-
-
-## Scanners de segurança (opcional)
-
-Vorpal agora possui um CLI isolado para executar **Naabu, RustScan, Nuclei, httpx (ProjectDiscovery) e arp-scan**, desde que as ferramentas já estejam instaladas no sistema. Confirme autorização para cada alvo usando `--authorized`:
+The checkpoint is stored in `checkpoints/latest.keras` (model and optimizer state) and `checkpoints/latest.json` (configuration and cumulative step). It resumes automatically when present. `--resume` remains available to explicitly require a checkpoint.
 
 ```bash
-python src/network_scanners.py naabu 192.168.1.10 --authorized
-python src/network_scanners.py httpx http://192.168.1.10 --authorized
+python src/train.py --steps 1000 --batch 8 --threads 4
 ```
 
-Os relatórios JSON são gravados em `scans/` (ignorado pelo Git) e **não entram automaticamente no corpus de treinamento**. Os testes executam com mocks, sem scans reais. Consulte [instalação, suporte, exemplos, limites e cuidados de segurança](docs/network-scanners.md).
+When resuming, the architecture configuration must be identical. The checkpoint restores optimizer state, but the random sample generator is not restored bit-for-bit. To discard history and train all sources from scratch, run `python src/train.py --reset --steps 500 --batch 8 --threads 4`.
 
-## Testes
+## Local network report
+
+For explicit local testing on a private IPv4 address, the project includes a bounded report generator that checks common ports and writes a JSON file. It does not execute payloads or rely on shell commands. It only accepts private or link-local IPv4 addresses and requires the `--authorized` flag.
+
+```bash
+./vorpal.py 192.168.1.25 --authorized --ports 22,80,443,3306,5432 --output reports/local_scan.json
+./vorpal.py 192.168.1.25 --authorized --checkpoint checkpoints/latest.keras --output reports/local_scan.json
+```
+
+When a trained checkpoint is available, the scanner uses the model's learned language patterns to compare risky and safe service descriptions before classifying exposure. If no checkpoint is present, it falls back to conservative port-based heuristics and logs that limitation clearly.
+
+The console prints the full flow step by step:
+
+1. validate the target IP
+2. enumerate the selected ports
+3. test each port and read any banner
+4. save the JSON report to disk
+
+The JSON report includes the target, timestamp, checked ports, and a list of open findings with service notes for human review.
+
+### PyTorch migration
+
+Old checkpoints `checkpoints/latest.pt` are **not compatible** with Keras and are **not converted automatically**. Preserve backups of old checkpoints and run a fresh training job without using `--resume` on the first TensorFlow run. The importers, corpus, and `data/*.bin` remain compatible.
+
+## Tests
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-Os testes verificam formatos e proteção da importação, máscara causal, formato das saídas, gradientes, salvamento e carregamento de modelo, geração de texto e um treinamento curto com retomada. Um workflow do GitHub Actions executa testes em CPU.
+The tests verify import format and protection, causal masking, output formatting, gradients, model saving/loading, text generation, and a short resumed training run. A GitHub Actions workflow runs tests on CPU.
 
-## Organização
+## Organization
 
-- `src/import_dataset.py`, `src/ingest_url.py`: importação e validação de dados.
-- `src/data.py`: corpus textual e separação treino/validação.
-- `src/model.py`: Transformer causal TensorFlow/Keras.
-- `src/train.py`: treinamento e checkpoint.
-- `src/evaluate.py`: loss e perplexidade por byte.
-- `src/generate.py`: geração local.
-- `tests/`: testes unitários e de integração.
-- `corpus/`: exemplos didáticos.
+- `src/import_dataset.py`: canonical data import and validation.
+- `src/data.py`: text corpus and train/validation split.
+- `src/model.py`: causal Transformer in TensorFlow/Keras.
+- `src/train.py`: training and checkpoints.
+- `src/evaluate.py`: loss and byte-level perplexity.
+- `src/generate.py`: local generation.
+- `src/content_safety.py`: shared secret-content filter.
+- `src/ingest_url.py`: backward-compatible adapter for URL imports.
+- `tests/`: unit and integration tests.
+- `corpus/`: didactic examples.
 
-Os arquivos `corpus/imported/`, `data/` e `checkpoints/` são ignorados pelo Git. A perplexidade por byte **não mede** capacidade de análise de vulnerabilidades. Revise qualquer código gerado antes de executá-lo.
+The `corpus/imported/`, `data/`, and `checkpoints/` directories are ignored by Git. Byte-level perplexity **does not measure** vulnerability-analysis capability. Review any generated code before executing it.

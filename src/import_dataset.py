@@ -1,31 +1,27 @@
-"""Safe, bounded import of licensed documents, code and security data into Vorpal corpus.
+"""Safe import of licensed documents, code and security data into Vorpal corpus.
 
 No code execution, archive extraction to disk, crawling or OCR. Review all content and licenses.
 """
 import argparse
 import hashlib
+import ipaddress
 from html.parser import HTMLParser
 from io import BytesIO
 import json
 from pathlib import Path, PurePosixPath
 import re
 import stat
+import socket
 import tarfile
 import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
+from content_safety import SECRET_CONTENT
 
-MAX_FILE = 8 * 1024 * 1024
-MAX_TOTAL = 16 * 1024 * 1024
 MAX_MEMBERS = 100
 MAX_RATIO = 100
-MAX_PAGES = 100
 MAX_REDIRECTS = 3
-MAX_URLS_PER_FOLDER = 100
-MAX_URLS_TOTAL = 250
-MAX_URL_LIST_BYTES = 64 * 1024
-MAX_URL_LENGTH = 4096
 
 CODE = {'.py', '.js', '.jsx', '.ts', '.tsx', '.java', '.kt', '.kts',
         '.go', '.rs', '.c', '.h', '.cpp', '.hpp', '.cs', '.sh', '.nse'}
@@ -35,11 +31,6 @@ SECURITY = {'.sarif', '.nessus', '.har'}
 SUPPORTED = CODE | DOCS | DATA | SECURITY
 SKIP_DIRS = {'.git', '.venv', 'node_modules', '__pycache__', 'dist', 'build'}
 SENSITIVE = re.compile(r'(^\.env|secret|credential|private[_-]?key|id_rsa|\.pem$|\.key$|password|token)', re.I)
-SECRET = re.compile(
-    r'-----BEGIN [A-Z ]*PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9_]{20,}|'
-    r'AKIA[0-9A-Z]{16}|(?i:api[_-]?key|password|secret|token)\s*[:=]\s*["\x27]?[^\s"\x27]{8,}'
-)
-
 class ExtractError(ValueError):
     pass
 
@@ -63,16 +54,20 @@ class TextHTML(HTMLParser):
         if not self.skip:
             self.parts.append(text)
 
+    def text(self):
+        return re.sub(r'\n{3,}', '\n\n', ''.join(self.parts)).strip()
+
 def safe_name(name):
     # Archive member paths are always POSIX-style, even on Windows.
     if '\\' in name or name.startswith('/') or re.match(r'^[A-Za-z]:', name):
-        raise ExtractError('caminho absoluto ou Windows em arquivo compactado')
+        raise ExtractError('absolute or Windows path in archive member')
     parts = PurePosixPath(name).parts
     if not parts or '..' in parts or '.' in parts or any(x in SKIP_DIRS for x in parts):
-        raise ExtractError('caminho inválido em arquivo compactado')
+        raise ExtractError('invalid path in archive member')
     if any(SENSITIVE.search(p) for p in parts):
-        raise ExtractError('nome potencialmente sensível')
+        raise ExtractError('potentially sensitive name')
     return PurePosixPath(name)
+
 
 def classify(name):
     low = name.lower()
@@ -82,53 +77,51 @@ def classify(name):
         return 'zip'
     return Path(low).suffix
 
+
 def extract_text(name, raw):
     kind = classify(name)
     if kind not in SUPPORTED:
-        raise ExtractError('formato não suportado')
-    if len(raw) > MAX_FILE:
-        raise ExtractError('arquivo maior que 8 MiB')
+        raise ExtractError('unsupported format')
     if kind == '.pdf':
         try:
             from pypdf import PdfReader
             reader = PdfReader(BytesIO(raw), strict=True)
-            if reader.is_encrypted or len(reader.pages) > MAX_PAGES:
-                raise ExtractError('PDF criptografado ou com páginas demais')
+            if reader.is_encrypted:
+                raise ExtractError('encrypted PDF')
             content = '\n'.join(page.extract_text() or '' for page in reader.pages)
         except ImportError as exc:
-            raise ExtractError('instale pypdf para importar PDFs') from exc
+            raise ExtractError('install pypdf to import PDFs') from exc
         except ExtractError:
             raise
         except Exception as exc:
-            raise ExtractError('PDF inválido ou impossível de extrair') from exc
+            raise ExtractError('invalid PDF or unable to extract text') from exc
     elif kind == '.docx':
         # DOCX is a ZIP; reject oversized members before handing it to python-docx.
         try:
             with zipfile.ZipFile(BytesIO(raw)) as archive:
                 entries = archive.infolist()
-                if len(entries) > MAX_MEMBERS or sum(x.file_size for x in entries) > MAX_TOTAL:
-                    raise ExtractError('DOCX excessivamente grande')
-                if any(x.file_size > MAX_FILE or
-                       (x.compress_size and x.file_size / x.compress_size > MAX_RATIO)
+                if len(entries) > MAX_MEMBERS:
+                    raise ExtractError('DOCX has too many members')
+                if any(x.compress_size and x.file_size / x.compress_size > MAX_RATIO
                        for x in entries):
-                    raise ExtractError('DOCX com expansão suspeita')
+                    raise ExtractError('suspicious DOCX expansion ratio')
             from docx import Document
             doc = Document(BytesIO(raw))
             content = '\n'.join([p.text for p in doc.paragraphs] +
                                 [cell.text for table in doc.tables for row in table.rows for cell in row.cells])
         except ImportError as exc:
-            raise ExtractError('instale python-docx para importar DOCX') from exc
+            raise ExtractError('install python-docx to import DOCX') from exc
         except ExtractError:
             raise
         except Exception as exc:
-            raise ExtractError('DOCX inválido ou impossível de extrair') from exc
+            raise ExtractError('invalid DOCX or unable to extract text') from exc
     else:
         if b'\x00' in raw:
-            raise ExtractError('conteúdo binário inesperado')
+            raise ExtractError('unexpected binary content')
         try:
             content = raw.decode('utf-8-sig')
         except UnicodeDecodeError as exc:
-            raise ExtractError('arquivo não codificado em UTF-8') from exc
+            raise ExtractError('file is not UTF-8 encoded') from exc
         if kind in {'.html', '.htm'}:
             p = TextHTML()
             p.feed(content)
@@ -141,12 +134,12 @@ def extract_text(name, raw):
                 else:
                     content = json.dumps(json.loads(content), indent=2, ensure_ascii=False)
             except (ValueError, TypeError) as exc:
-                raise ExtractError('JSON inválido') from exc
+                raise ExtractError('invalid JSON') from exc
     content = re.sub(r'\n{3,}', '\n\n', content).strip()
     if len(content) < 50:
-        raise ExtractError('texto extraído insuficiente')
-    if SECRET.search(content):
-        raise ExtractError('possível credencial/segredo encontrado: revise fora do importador')
+        raise ExtractError('insufficient extracted text')
+    if SECRET_CONTENT.search(content):
+        raise ExtractError('possible credential/secret found: review outside the importer')
     return content
 
 def iter_archive(name, raw):
@@ -156,64 +149,76 @@ def iter_archive(name, raw):
             with zipfile.ZipFile(BytesIO(raw)) as archive:
                 entries = archive.infolist()
                 if len(entries) > MAX_MEMBERS:
-                    raise ExtractError('arquivo compactado com entradas demais')
-                total = 0
+                    raise ExtractError('archive has too many entries')
                 for info in entries:
                     if info.is_dir():
                         continue
                     path = safe_name(info.filename)
                     mode = (info.external_attr >> 16) & 0xFFFF
                     if stat.S_ISLNK(mode):
-                        raise ExtractError('links simbólicos não são permitidos')
+                        raise ExtractError('symbolic links are not allowed')
                     if classify(str(path)) not in SUPPORTED:
                         continue
                     if info.flag_bits & 0x1:
-                        raise ExtractError('ZIP criptografado não é permitido')
-                    total += info.file_size
-                    if total > MAX_TOTAL or info.file_size > MAX_FILE:
-                        raise ExtractError('limite descompactado excedido')
+                        raise ExtractError('encrypted ZIP is not allowed')
                     if info.file_size and (not info.compress_size or info.file_size / info.compress_size > MAX_RATIO):
-                        raise ExtractError('taxa de compactação suspeita')
+                        raise ExtractError('suspicious compression ratio')
                     with archive.open(info) as stream:
-                        blob = stream.read(MAX_FILE + 1)
-                    if len(blob) > MAX_FILE:
-                        raise ExtractError('limite de entrada excedido')
+                        blob = stream.read()
                     yield str(path), blob
         except (zipfile.BadZipFile, RuntimeError, OSError) as exc:
-            raise ExtractError('ZIP inválido') from exc
+            raise ExtractError('invalid ZIP') from exc
     elif typ == 'tar':
         try:
             with tarfile.open(fileobj=BytesIO(raw), mode='r:gz') as archive:
                 members = archive.getmembers()
                 if len(members) > MAX_MEMBERS:
-                    raise ExtractError('TAR com entradas demais')
-                total = 0
+                    raise ExtractError('TAR archive has too many entries')
                 for member in members:
                     if member.isdir():
                         continue
                     if not member.isfile():
-                        raise ExtractError('links ou entradas especiais não são permitidos')
+                        raise ExtractError('special links or entries are not allowed')
                     path = safe_name(member.name)
                     if classify(str(path)) not in SUPPORTED:
                         continue
-                    total += member.size
-                    if member.size > MAX_FILE or total > MAX_TOTAL:
-                        raise ExtractError('limite descompactado excedido')
                     stream = archive.extractfile(member)
                     if stream is None:
-                        raise ExtractError('entrada TAR ilegível')
+                        raise ExtractError('unreadable TAR member')
                     with stream:
-                        blob = stream.read(MAX_FILE + 1)
-                    if len(blob) > MAX_FILE:
-                        raise ExtractError('limite de entrada excedido')
+                        blob = stream.read()
                     yield str(path), blob
         except (tarfile.TarError, OSError, EOFError) as exc:
-            raise ExtractError('TAR inválido') from exc
+            raise ExtractError('invalid TAR') from exc
+
+
+def validate_url(url):
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme not in ('https', 'http') or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError('Provide a public HTTP(S) URL without credentials.')
+    if parsed.port not in (None, 80, 443):
+        raise ValueError('Ports other than 80 and 443 are not allowed.')
+    host = parsed.hostname.rstrip('.')
+    if host.lower() == 'localhost' or host.lower().endswith('.localhost'):
+        raise ValueError('Local addresses are not allowed.')
+    try:
+        addresses = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == 'https' else 80),
+                                       type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ValueError('Could not resolve the host.') from exc
+    if not addresses or not all(ipaddress.ip_address(info[4][0]).is_global for info in addresses):
+        raise ValueError('Private, reserved, or local address is blocked.')
+    return url
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        return None
+
 
 def fetch_url(url):
     # DNS preflight inherited from existing importer; not a complete protection
     # against DNS rebinding. Run this tool in a restricted-network environment.
-    from ingest_url import validate_url, NoRedirect
     opener = urllib.request.build_opener(NoRedirect())
     for _ in range(MAX_REDIRECTS + 1):
         validate_url(url)
@@ -225,16 +230,11 @@ def fetch_url(url):
                 raise
             location = exc.headers.get('Location')
             if not location:
-                raise ExtractError('redirecionamento sem Location')
+                raise ExtractError('redirect without Location header')
             url = urllib.parse.urljoin(url, location)
             continue
         with response:
-            size = response.headers.get('Content-Length')
-            if size and int(size) > MAX_FILE:
-                raise ExtractError('download maior que 8 MiB')
-            data = response.read(MAX_FILE + 1)
-            if len(data) > MAX_FILE:
-                raise ExtractError('download maior que 8 MiB')
+            data = response.read()
             path = urllib.parse.urlsplit(url).path
             name = urllib.parse.unquote(PurePosixPath(path).name)
             if classify(name) not in SUPPORTED | {'zip', 'tar'}:
@@ -244,9 +244,9 @@ def fetch_url(url):
                         'application/zip':'archive.zip',
                         'application/vnd.openxmlformats-officedocument.wordprocessingml.document':'page.docx'}.get(media, '')
             if not name:
-                raise ExtractError('tipo de URL não suportado')
+                raise ExtractError('unsupported URL type')
             return name, data, url
-    raise ExtractError('redirecionamentos demais')
+    raise ExtractError('too many redirects')
 
 def import_one(name, raw, provenance, out):
     out = Path(out)
@@ -266,7 +266,7 @@ def import_one(name, raw, provenance, out):
             rejected.append({'member': entry_name, 'reason': str(exc)})
     return accepted, rejected
 
-def collect_directory(root):
+def collect_directory(root, *, used_sources=None, excluded_directory=None):
     """Collect supported local files plus URLs from any file named exactly 'url'.
 
     A URL list uses UTF-8, one URL per line; empty lines and # comments are ignored.
@@ -274,106 +274,156 @@ def collect_directory(root):
     """
     root = Path(root)
     if not root.is_dir() or root.is_symlink():
-        raise ExtractError('diretório não encontrado ou link simbólico')
+        raise ExtractError('directory not found or symbolic link')
+    root = root.resolve()
+    used_sources = used_sources if used_sources is not None else set()
+    excluded = Path(excluded_directory).resolve() if excluded_directory else None
     sources, rejected, seen_urls = [], [], set()
-    total_urls = 0
     for path in sorted(root.rglob('*')):
+        resolved = path.resolve()
+        if excluded and (resolved == excluded or excluded in resolved.parents):
+            continue
         relative = path.relative_to(root)
         if any(part in SKIP_DIRS for part in relative.parts) or path.is_symlink():
             continue
         if not path.is_file():
             continue
+        if path.name == 'import_report.json':
+            continue
         if path.name == 'url':
-            if path.stat().st_size > MAX_URL_LIST_BYTES:
-                rejected.append({'source': str(path), 'reason': 'lista URL maior que 64 KiB'})
-                continue
             try:
                 lines = path.read_text(encoding='utf-8-sig').splitlines()
             except (UnicodeError, OSError) as exc:
-                rejected.append({'source': str(path), 'reason': f'lista URL ilegível: {exc}'})
+                rejected.append({'source': str(path), 'reason': f'unreadable URL list: {exc}'})
                 continue
-            count = 0
             for line_no, raw_line in enumerate(lines, start=1):
                 url = raw_line.strip()
                 if not url or url.startswith('#'):
                     continue
-                count += 1
                 source = f'{path}:{line_no}'
-                if count > MAX_URLS_PER_FOLDER or total_urls >= MAX_URLS_TOTAL:
-                    rejected.append({'source': source, 'reason': 'limite de URLs excedido'})
-                    continue
-                total_urls += 1
-                if len(url) > MAX_URL_LENGTH:
-                    rejected.append({'source': source, 'reason': 'URL longa demais'})
-                    continue
                 if url in seen_urls:
                     continue
                 seen_urls.add(url)
+                source_key = f'url:{url}'
+                if source_key in used_sources:
+                    print(f'Skipping previously imported URL: {url}', flush=True)
+                    continue
                 try:
+                    print(f'Importing URL: {url} (from {source})', flush=True)
                     name, raw, final_url = fetch_url(url)
-                    sources.append((name, raw, final_url))
+                    sources.append((name, raw, final_url, source_key))
                 except (ExtractError, ValueError, urllib.error.URLError, OSError) as exc:
                     rejected.append({'source': source, 'url': url, 'reason': str(exc)})
             continue
         if classify(path.name) not in SUPPORTED | {'zip', 'tar'}:
             continue
         try:
-            if path.stat().st_size > MAX_FILE:
-                rejected.append({'source': str(path), 'reason': 'arquivo maior que 8 MiB'})
+            data = path.read_bytes()
+            source_key = f'file:{resolved}:{hashlib.sha256(data).hexdigest()}'
+            if source_key in used_sources:
+                print(f'Skipping previously imported file: {path}', flush=True)
                 continue
-            sources.append((path.name, path.read_bytes(), str(path)))
+            print(f'Importing file: {path}', flush=True)
+            sources.append((path.name, data, str(path), source_key))
         except OSError as exc:
             rejected.append({'source': str(path), 'reason': str(exc)})
     return sources, rejected
 
-def main():
-    p = argparse.ArgumentParser(description='Importar arquivos locais, diretórios, URL, ZIP e TAR.GZ para o corpus do Vorpal')
+
+def import_sources(sources, rejected, out, *, used_sources=None):
+    output = Path(out)
+    accepted = []
+    used_sources = used_sources if used_sources is not None else set()
+    for source in sources:
+        name, data, provenance = source[:3]
+        source_key = source[3] if len(source) > 3 else None
+        if SENSITIVE.search(name):
+            rejected.append({'source': provenance, 'reason': 'potentially sensitive name'})
+            continue
+        print(f'Extracting content: {provenance}', flush=True)
+        try:
+            imported, failed = import_one(name, data, provenance, output)
+            accepted.extend(imported)
+            rejected.extend([{'source': provenance, **item} for item in failed])
+            if imported and source_key:
+                used_sources.add(source_key)
+                if urllib.parse.urlsplit(provenance).scheme in {'http', 'https'}:
+                    used_sources.add(f'url:{provenance}')
+        except (ExtractError, OSError) as exc:
+            rejected.append({'source': provenance, 'reason': str(exc)})
+    if accepted or rejected:
+        output.mkdir(parents=True, exist_ok=True)
+        (output / 'import_report.json').write_text(
+            json.dumps({'accepted': accepted, 'rejected': rejected}, indent=2, ensure_ascii=False),
+            encoding='utf-8')
+    print(f'Imported: {len(accepted)}; rejected: {len(rejected)}', flush=True)
+    for item in rejected[:20]:
+        print('REJECTED:', item, flush=True)
+    state_path = output / 'import_state.json'
+    if used_sources:
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = state_path.with_suffix('.json.tmp')
+        temporary_path.write_text(
+            json.dumps({'used_sources': sorted(used_sources)}, indent=2), encoding='utf-8')
+        temporary_path.replace(state_path)
+    return accepted, rejected
+
+
+def import_directory(root, out='corpus/imported', *, force=False):
+    output = Path(out).resolve()
+    state_path = output / 'import_state.json'
+    used_sources = set()
+    if not force and state_path.is_file():
+        try:
+            used_sources.update(json.loads(state_path.read_text(encoding='utf-8')).get('used_sources', []))
+        except (json.JSONDecodeError, OSError):
+            print(f'Ignoring invalid import state: {state_path}', flush=True)
+    if not force and output.is_dir():
+        for report_path in output.rglob('import_report.json'):
+            try:
+                report = json.loads(report_path.read_text(encoding='utf-8'))
+            except (json.JSONDecodeError, OSError):
+                continue
+            for entry in report.get('accepted', []):
+                source = entry.get('source', '')
+                if urllib.parse.urlsplit(source).scheme in {'http', 'https'}:
+                    used_sources.add(f'url:{source}')
+    sources, rejected = collect_directory(
+        root, used_sources=used_sources, excluded_directory=output)
+    return import_sources(sources, rejected, output, used_sources=used_sources)
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(description='Import local files, directories, URLs, ZIP archives, and TAR.GZ into the Vorpal corpus')
     group = p.add_mutually_exclusive_group(required=True)
     group.add_argument('--file')
     group.add_argument('--directory')
     group.add_argument('--url')
     p.add_argument('--out', default='corpus/imported')
-    args = p.parse_args()
+    args = p.parse_args(argv)
     output = Path(args.out)
     sources = []
     rejected = []
     try:
         if args.url:
+            print(f'Importing URL: {args.url}', flush=True)
             name, raw, url = fetch_url(args.url)
             sources = [(name, raw, url)]
         elif args.file:
             path = Path(args.file)
-            if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_FILE:
-                raise ExtractError('arquivo inválido, link simbólico ou maior que 8 MiB')
+            if path.is_symlink() or not path.is_file():
+                raise ExtractError('invalid file or symbolic link')
+            print(f'Importing file: {path}', flush=True)
             sources = [(path.name, path.read_bytes(), str(path))]
         else:
             sources, rejected = collect_directory(args.directory)
-        accepted = []
-        for name, data, provenance in sources:
-            if SENSITIVE.search(name):
-                rejected.append({'source': provenance, 'reason': 'nome potencialmente sensível'})
-                continue
-            try:
-                a, r = import_one(name, data, provenance, output)
-                accepted.extend(a)
-                rejected.extend([{'source': provenance, **item} for item in r])
-            except (ExtractError, OSError) as exc:
-                rejected.append({'source': provenance, 'reason': str(exc)})
-        if accepted or rejected:
-            output.mkdir(parents=True, exist_ok=True)
-            report = output / 'import_report.json'
-            report.write_text(json.dumps({'accepted': accepted, 'rejected': rejected},
-                                         indent=2, ensure_ascii=False), encoding='utf-8')
-        print(f'Importados: {len(accepted)}; rejeitados: {len(rejected)}')
-        if rejected:
-            for item in rejected[:20]:
-                print('REJEITADO:', item)
+        accepted, rejected = import_sources(sources, rejected, output)
         if not accepted:
-            p.exit(1, 'Nenhum arquivo importado.\n')
-        print('Revise as licenças e os arquivos em corpus/imported antes de preparar data/.')
+            p.exit(1, 'No files were imported.\n')
+        print('Review the licenses and files in corpus/imported before preparing data/.')
         print('python src/data.py --corpus corpus --out data')
     except (ExtractError, OSError, ValueError, urllib.error.URLError) as exc:
-        p.exit(1, f'Erro: {exc}\n')
+        p.exit(1, f'Error: {exc}\n')
 
 if __name__ == '__main__':
     main()

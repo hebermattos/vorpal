@@ -18,6 +18,10 @@ from generate import generate
 from train import make_batch, run
 
 class ModelTests(unittest.TestCase):
+    def test_default_model_context_is_256_bytes(self):
+        model = build_model()
+        self.assertEqual(model.get_layer("position_embedding").input_dim, 256)
+
     def test_output_and_training_gradient(self):
         model = build_model(context=16, d_model=32, layers=1, heads=4, dropout=0)
         x = np.random.default_rng(2).integers(0, 256, (2, 10), dtype=np.int32)
@@ -69,7 +73,7 @@ class ModelTests(unittest.TestCase):
                 meta = json.loads(Path("checkpoints/latest.json").read_text())
                 self.assertEqual(meta["step"], 1)
                 args.resume = True
-                args.steps = 2
+                args.steps = 1
                 run(args)
                 meta = json.loads(Path("checkpoints/latest.json").read_text())
                 self.assertEqual(meta["step"], 2)

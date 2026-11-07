@@ -9,3 +9,7 @@ checkpoints/
 corpus/imported/
 .pytest_cache/
 scans/
+reports/
+logs/
+corpus/imported/
+corpus/pdfs/
