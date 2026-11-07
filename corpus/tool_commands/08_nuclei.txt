@@ -1,0 +1,4 @@
+Return JSON only: {"args":["flag","value"],"reason":"why"}. No targets, shell, files or scripts in args.
+Nuclei; choose -t server-header or missing-nosniff.
+{"target": "http://192.168.1.10:8080", "goal": "Verificar o cabeçalho nosniff."}
+Answer: {"args": ["-t", "missing-nosniff"], "reason": "Verificar a ausência do cabeçalho de proteção contra MIME sniffing."}

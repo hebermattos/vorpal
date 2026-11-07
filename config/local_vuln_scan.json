@@ -1,0 +1,78 @@
+{
+  "cli": {
+    "timeout": 1.0,
+    "output": "reports/local_vuln_scan.json"
+  },
+  "functions": {
+    "run_scan": {
+      "timeout": 1.0
+    }
+  },
+  "policy": {
+    "default_ports": [
+      21,
+      22,
+      23,
+      25,
+      53,
+      80,
+      110,
+      111,
+      135,
+      139,
+      143,
+      389,
+      443,
+      445,
+      465,
+      587,
+      631,
+      636,
+      993,
+      995,
+      1433,
+      1521,
+      2049,
+      2375,
+      2376,
+      3000,
+      3306,
+      3389,
+      5432,
+      5900,
+      6379,
+      8000,
+      8080,
+      8443,
+      9090,
+      9200,
+      11211,
+      27017
+    ]
+  },
+  "runtime": {
+    "checkpoint": "checkpoints/latest.keras",
+    "reports_dir": "reports",
+    "banner_bytes": 1024,
+    "banner_prompt_chars": 512,
+    "service_max_new": 256,
+    "cve_max_new": 512,
+    "temperature": 0.2,
+    "max_note_chars": 1000,
+    "max_cves": 20,
+    "http_probe_ports": [
+      80,
+      8080
+    ],
+    "medium_risk_ports": [
+      22,
+      80,
+      443,
+      3389,
+      5900
+    ],
+    "high_risk_delta": 0.05,
+    "medium_risk_delta": 0.0,
+    "banner_preview_chars": 120
+  }
+}

@@ -1,5 +1,7 @@
 # Python 3.11 or 3.12 recommended; CPU training (no PyTorch)
-tensorflow>=2.16,<2.22
+tensorflow-cpu>=2.16,<2.22; sys_platform == "linux"
+tensorflow>=2.16,<2.22; sys_platform != "linux"
 numpy>=1.26,<3
 pypdf>=5,<7
+fonttools>=4,<5
 python-docx>=1.1,<2

@@ -1,0 +1,33 @@
+{
+  "cli": {
+    "steps": 500,
+    "batch": 8,
+    "context": 256,
+    "dim": 96,
+    "layers": 3,
+    "heads": 4,
+    "dropout": 0.1,
+    "threads": 4,
+    "lr": 0.0003,
+    "seed": 42,
+    "corpus": "corpus",
+    "out": "data",
+    "log_dir": "logs"
+  },
+  "policy": {
+    "checkpoint": "checkpoints/latest.keras",
+    "metadata": "checkpoints/latest.json"
+  },
+  "runtime": {
+    "clipnorm": 1.0,
+    "log_interval": 50,
+    "checkpoint_interval": 100,
+    "imported_subdir": "imported",
+    "validation_samples": 8,
+    "validation_interval": 100,
+    "validation_seed": 123,
+    "best_checkpoint_name": "best.keras",
+    "best_metadata_name": "best.json",
+    "metrics_name": "metrics.jsonl"
+  }
+}

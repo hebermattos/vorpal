@@ -1,0 +1,72 @@
+{
+  "cli": {
+    "out": "corpus/imported"
+  },
+  "functions": {
+    "import_directory": {
+      "out": "corpus/imported"
+    }
+  },
+  "policy": {
+    "max_members": 100,
+    "max_ratio": 100,
+    "max_redirects": 3,
+    "code": [
+      ".c",
+      ".cpp",
+      ".cs",
+      ".go",
+      ".h",
+      ".hpp",
+      ".java",
+      ".js",
+      ".jsx",
+      ".kt",
+      ".kts",
+      ".nse",
+      ".py",
+      ".rs",
+      ".sh",
+      ".ts",
+      ".tsx"
+    ],
+    "docs": [
+      ".docx",
+      ".htm",
+      ".html",
+      ".md",
+      ".pdf",
+      ".rst",
+      ".txt"
+    ],
+    "data": [
+      ".csv",
+      ".json",
+      ".jsonl",
+      ".toml",
+      ".xml",
+      ".yaml",
+      ".yml"
+    ],
+    "security": [
+      ".har",
+      ".nessus",
+      ".sarif"
+    ],
+    "skip_dirs": [
+      ".git",
+      ".venv",
+      "__pycache__",
+      "build",
+      "dist",
+      "node_modules"
+    ],
+    "sensitive": "(^\\.env|secret|credential|private[_-]?key|id_rsa|\\.pem$|\\.key$|password|token)"
+  },
+  "runtime": {
+    "min_text_length": 50,
+    "timeout": 20,
+    "user_agent": "VorpalDatasetImporter/1.0",
+    "rejected_preview_limit": 20
+  }
+}

@@ -1,0 +1,17 @@
+id: vorpal-server-header
+info:
+  name: HTTP Server header disclosure
+  author: vorpal
+  severity: info
+  description: Reports the presence of a Server response header for manual review, not a confirmed vulnerability.
+  tags: tech,headers
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    redirects: false
+    matchers:
+      - type: regex
+        part: header
+        regex:
+          - '(?im)^server\s*:'

@@ -1,0 +1,7 @@
+# Isolated configuration for the local, reviewed templates in this repository.
+disable-update-check: true
+no-interactsh: true
+disable-redirects: true
+no-stdin: true
+omit-raw: true
+omit-template: true
