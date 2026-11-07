@@ -2,7 +2,7 @@
 import tensorflow as tf
 from tensorflow import keras
 
-def build_model(context=128, d_model=96, layers=3, heads=4, dropout=0.1):
+def build_model(context=256, d_model=96, layers=3, heads=4, dropout=0.1):
     if context < 2 or d_model < 4 or layers < 1 or heads < 1 or d_model % heads:
         raise ValueError("Invalid context/d_model/layers/heads configuration")
     if not 0 <= dropout < 1:

@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from import_dataset import collect_directory, main
+from import_dataset import collect_directory, import_directory, main
 
 TEXT = b'Secure development requires validating untrusted inputs, checking limits and testing behavior.\n'
 
@@ -21,16 +21,19 @@ class FolderURLTests(unittest.TestCase):
             nested.mkdir()
             (nested / 'guide.md').write_bytes(TEXT + b'An additional paragraph about test coverage.\n')
             (nested / 'url').write_text(
-                '# links de documentacao\n\nhttps://example.org/a.md\n'
+                '# documentation links\n\nhttps://example.org/a.md\n'
                 'https://example.org/a.md\nhttps://example.org/b.py\n',
                 encoding='utf-8')
+            output = io.StringIO()
             with patch('import_dataset.fetch_url', side_effect=lambda u:
-                       (u.rsplit('/',1)[-1], TEXT, u)) as fetch:
+                       (u.rsplit('/',1)[-1], TEXT, u)) as fetch, redirect_stdout(output):
                 sources, errors = collect_directory(root)
             self.assertEqual(errors, [])
             self.assertEqual(len(sources), 4)
             self.assertEqual(fetch.call_count, 2)
             self.assertNotIn('url', [x[0] for x in sources])
+            self.assertIn('Importing file:', output.getvalue())
+            self.assertIn('Importing URL: https://example.org/a.md', output.getvalue())
 
     def test_url_failure_does_not_block_local_files(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -39,7 +42,7 @@ class FolderURLTests(unittest.TestCase):
             (root/'url').write_text('invalid-link\nhttps://example.org/ok.txt\n')
             def fake_fetch(url):
                 if url == 'invalid-link':
-                    raise ValueError('URL inválida')
+                    raise ValueError('invalid URL')
                 return 'ok.txt', TEXT, url
             with patch('import_dataset.fetch_url', side_effect=fake_fetch):
                 sources, rejected=collect_directory(root)
@@ -47,15 +50,60 @@ class FolderURLTests(unittest.TestCase):
             self.assertEqual(len(rejected), 1)
             self.assertIn(':1',rejected[0]['source'])
 
-    def test_manifest_with_long_link_and_comments(self):
+    def test_manifest_accepts_long_links_and_comments(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
-            (root/'url').write_text('# comentário\n\n' + 'x'*4097 + '\n')
-            with patch('import_dataset.fetch_url') as fetch:
+            (root/'url').write_text('# comment\n\n' + 'x'*4097 + '\n')
+            with patch('import_dataset.fetch_url', return_value=('guide.txt', TEXT, 'long-url')) as fetch:
                 sources, rejected=collect_directory(root)
-            self.assertEqual(sources,[])
-            self.assertEqual(len(rejected),1)
-            self.assertIn('longa',rejected[0]['reason'])
+            self.assertEqual(len(sources),1)
+            self.assertEqual(rejected,[])
+            fetch.assert_called_once()
+
+    def test_manifest_has_no_250_url_cap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            urls = [f'https://example.org/doc-{index}.txt' for index in range(251)]
+            (root / 'url').write_text('\n'.join(urls), encoding='utf-8')
+            with patch('import_dataset.fetch_url', side_effect=lambda url: ('guide.txt', TEXT, url)) as fetch:
+                sources, rejected = collect_directory(root)
+            self.assertEqual(len(sources), 251)
+            self.assertEqual(rejected, [])
+            self.assertEqual(fetch.call_count, 251)
+
+    def test_import_directory_skips_sources_already_imported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'corpus'
+            output = root / 'imported'
+            root.mkdir()
+            source_file = root / 'guide.md'
+            source_file.write_bytes(TEXT)
+            (root / 'url').write_text('https://example.org/guide.txt\n', encoding='utf-8')
+            logs = io.StringIO()
+            with patch('import_dataset.fetch_url', return_value=('guide.txt', TEXT, 'https://example.org/guide.txt')) as fetch, \
+                 redirect_stdout(logs):
+                first_import, first_errors = import_directory(root, output)
+                second_import, second_errors = import_directory(root, output)
+            self.assertEqual(len(first_import), 2)
+            self.assertEqual(first_errors, [])
+            self.assertEqual(second_import, [])
+            self.assertEqual(second_errors, [])
+            fetch.assert_called_once()
+            self.assertIn('Skipping previously imported URL:', logs.getvalue())
+            self.assertIn('Skipping previously imported file:', logs.getvalue())
+
+            with patch('import_dataset.fetch_url', return_value=('guide.txt', TEXT, 'https://example.org/guide.txt')) as fetch, \
+                 redirect_stdout(io.StringIO()):
+                reset_import, reset_errors = import_directory(root, output, force=True)
+            self.assertEqual(len(reset_import), 2)
+            self.assertEqual(reset_errors, [])
+            fetch.assert_called_once()
+
+            source_file.write_bytes(TEXT + b'Updated guidance after the first import.\n')
+            with patch('import_dataset.fetch_url') as fetch, redirect_stdout(io.StringIO()):
+                changed_import, changed_errors = import_directory(root, output)
+            self.assertEqual(len(changed_import), 1)
+            self.assertEqual(changed_errors, [])
             fetch.assert_not_called()
 
     def test_main_report_captures_download_errors_and_success(self):
@@ -66,7 +114,7 @@ class FolderURLTests(unittest.TestCase):
             (root/'url').write_text('https://example.org/bad\nhttps://example.org/ok.txt\n')
             def fake_fetch(url):
                 if url.endswith('/bad'):
-                    raise ValueError('URL rejeitada')
+                    raise ValueError('rejected URL')
                 return 'ok.txt', TEXT+b'More unique safety guidance.\n',url
             output=io.StringIO()
             with patch('import_dataset.fetch_url', side_effect=fake_fetch), \
