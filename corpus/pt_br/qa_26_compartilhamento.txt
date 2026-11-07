@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Como compartilhar um documento com cuidado?
+Resposta: Dê acesso apenas a quem precisa e revise as permissões do link.

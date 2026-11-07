@@ -1,0 +1,3 @@
+Se a sala estiver disponível, faremos a atividade no térreo. Caso contrário, usaremos a sala do segundo andar. A confirmação será enviada depois que a equipe consultar a agenda do prédio.
+
+O local da atividade depende de uma condição que ainda não foi verificada. Por isso, não é correto afirmar que o encontro já está confirmado no térreo. Uma resposta cuidadosa preserva essa incerteza e explica o que falta decidir.

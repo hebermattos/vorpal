@@ -1,0 +1,1 @@
+Arquivos importantes precisam de cópias de segurança. Uma cópia deve ficar separada do dispositivo principal, com acesso protegido. Também é necessário testar a restauração. Esse teste ajuda a descobrir problemas antes de uma perda real. Ao compartilhar documentos, escolha quem pode ler ou editar e retire os acessos que deixaram de ser necessários.

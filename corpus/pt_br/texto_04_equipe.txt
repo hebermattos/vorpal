@@ -1,0 +1,1 @@
+A segurança de uma equipe depende de procedimentos claros. Cada pessoa deve receber os acessos necessários para sua função. Mudanças de função exigem uma revisão dessas permissões. Quando alguém sai da equipe, os acessos precisam ser revogados. Dúvidas e incidentes devem ser comunicados ao responsável, sem divulgar dados sensíveis em canais abertos.

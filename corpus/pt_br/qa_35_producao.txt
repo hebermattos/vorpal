@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Posso testar mudanças direto em produção?
+Resposta: Prefira um ambiente separado e tenha um plano de recuperação.

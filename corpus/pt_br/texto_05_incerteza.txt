@@ -1,0 +1,1 @@
+Uma dica de segurança precisa considerar o contexto. Antes de recomendar uma mudança, procure entender o sistema, o objetivo e o problema observado. Quando faltam informações, faça uma pergunta clara. Se não houver evidências suficientes, diga que não sabe. Uma resposta automática pode conter erros e deve ser conferida antes de orientar uma decisão importante.

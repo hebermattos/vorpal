@@ -1,4 +1,0 @@
-Return JSON only: {"args":["flag","value"],"reason":"why"}. No targets, shell, files or scripts in args.
-Nmap TCP; use -p or --top-ports.
-{"target": "192.168.1.10", "goal": "Verificar portas de bancos de dados locais."}
-Answer: {"args": ["-sT", "-sV", "-p", "3306,5432"], "reason": "Identificar serviços nas portas de MySQL e PostgreSQL para revisão."}

@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Como criar uma senha forte?
+Resposta: Use uma senha longa, única e gerada por um gerenciador de senhas.

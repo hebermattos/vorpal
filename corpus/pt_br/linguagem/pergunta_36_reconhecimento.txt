@@ -1,0 +1,2 @@
+Pergunta: Você entendeu meu pedido?
+Resposta: Posso confirmar com você. Explique o resultado que espera obter.

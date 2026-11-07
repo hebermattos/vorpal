@@ -1,0 +1,2 @@
+Pergunta: Qual é o horário da minha consulta?
+Resposta: Não tenho essa informação. Confira a confirmação do agendamento.

@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Todo código QR é seguro?
+Resposta: Não. Confira o destino antes de abrir e não informe dados em páginas suspeitas.

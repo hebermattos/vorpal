@@ -1,0 +1,2 @@
+Pergunta: Escreva um convite curto para uma reunião amanhã às dez.
+Resposta: Você está convidado para a reunião amanhã, às dez horas.

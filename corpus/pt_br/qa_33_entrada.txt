@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Como tratar dados enviados por usuários?
+Resposta: Valide tipo, tamanho e formato antes de usar os dados.

@@ -2,9 +2,9 @@
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
-const views = {overview: 'Visão geral', generate: 'Gerar código', train: 'Treinamento', dataset: 'Dataset', evaluate: 'Avaliação', tools: 'Ferramentas', settings: 'Configurações'};
-const actions = {generate: 'Geração de código', train: 'Treinamento', evaluate: 'Avaliação do modelo', benchmark: 'Benchmark de código', prepare: 'Preparação do dataset', import: 'Importação de fontes', tool_plan: 'Planejamento de comando', tool_run: 'Execução de ferramenta'};
-const statuses = {running: 'Em execução', completed: 'Concluído', failed: 'Falhou', cancelled: 'Interrompido', interrupted: 'Servidor encerrado'};
+const views = {overview: 'Overview', generate: 'Ask / generate', train: 'Training', dataset: 'Dataset', evaluate: 'Evaluation', tools: 'Tools', settings: 'Settings'};
+const actions = {generate: 'Model response', train: 'Training', evaluate: 'Model evaluation', benchmark: 'Code benchmark', prepare: 'Dataset preparation', import: 'Source import', tool_plan: 'Command planning', tool_run: 'Tool execution'};
+const statuses = {running: 'Running', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled', interrupted: 'Server stopped'};
 const actionIcons = {generate: 'code', train: 'train', evaluate: 'check', benchmark: 'check', prepare: 'data', import: 'folder'};
 let state = null;
 let selectedJob = null;
@@ -21,9 +21,9 @@ let configListKey = '';
 let toolPlanId = null;
 let toolPlanStale = false;
 const drafts = new Map();
-const number = new Intl.NumberFormat('pt-BR');
-const decimals = new Intl.NumberFormat('pt-BR', {maximumFractionDigits: 2});
-const timestamp = new Intl.DateTimeFormat('pt-BR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
+const number = new Intl.NumberFormat('en-US');
+const decimals = new Intl.NumberFormat('en-US', {maximumFractionDigits: 2});
+const timestamp = new Intl.DateTimeFormat('en-US', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
 
 function element(tag, className, content) {
   const node = document.createElement(tag);
@@ -63,7 +63,7 @@ async function api(path, options = {}) {
   }
   const response = await fetch(path, {cache: 'no-store', ...options, headers});
   const result = await response.json();
-  if (!response.ok) throw new Error(result.error || 'Não foi possível completar a operação.');
+  if (!response.ok) throw new Error(result.error || 'Unable to complete the operation.');
   return result;
 }
 function tag(label, kind = 'neutral') { return element('span', `mini-pill ${kind}`, label); }
@@ -123,7 +123,7 @@ function initializeForms() {
   ]) setDefault(input, value, maximum);
   $('#generate-prompt').maxLength = state.limits.prompt_chars;
   for (const select of $$('.profile-select')) selectOptions(select, state.profiles.map(profile => ({id: profile.id, label: profile.label})));
-  for (const select of $$('.checkpoint-select')) selectOptions(select, state.checkpoints.map(checkpoint => ({id: checkpoint.id, label: checkpoint.id === 'latest' ? 'Último · latest.keras' : 'Melhor · best.keras', disabled: !checkpoint.exists})));
+  for (const select of $$('.checkpoint-select')) selectOptions(select, state.checkpoints.map(checkpoint => ({id: checkpoint.id, label: checkpoint.id === 'latest' ? 'Latest · latest.keras' : 'Best · best.keras', disabled: !checkpoint.exists})));
   const latest = state.checkpoints.find(item => item.id === 'latest');
   $('input[name="mode"][value="replay"]').disabled = !latest?.exists;
 }
@@ -133,22 +133,22 @@ function renderOverview() {
   const validDocuments = manifest?.valid_documents?.length || 0;
   text('#stat-steps', state.metadata ? number.format(state.metadata.step) : '—');
   text('#stat-documents', manifest ? number.format(trainDocuments + validDocuments) : '—');
-  text('#stat-split', manifest ? `${trainDocuments} treino · ${validDocuments} validação` : 'Prepare seu primeiro dataset');
+  text('#stat-split', manifest ? `${trainDocuments} training · ${validDocuments} validation` : 'Prepare your first dataset');
   text('#stat-bytes', manifest ? bytes((manifest.train_bytes || 0) + (manifest.valid_bytes || 0)) : '—');
   text('#stat-syntax', state.benchmark ? `${state.benchmark.syntax_passes}/${state.benchmark.total}` : '—');
   const architecture = state.metadata?.config;
-  text('#model-context', architecture ? `${architecture.context} bytes` : 'Sem checkpoint');
-  text('#model-architecture', architecture ? `${architecture.layers} blocos · ${architecture.d_model} dim` : '—');
-  text('#model-checkpoint', state.metadata ? `passo ${number.format(state.metadata.step)}` : 'Não treinado');
-  text('#train-step-label', state.metadata ? `Checkpoint · passo ${number.format(state.metadata.step)}` : 'Primeiro treinamento');
+  text('#model-context', architecture ? `${architecture.context} bytes` : 'No checkpoint');
+  text('#model-architecture', architecture ? `${architecture.layers} blocks · ${architecture.d_model} dim` : '—');
+  text('#model-checkpoint', state.metadata ? `step ${number.format(state.metadata.step)}` : 'Not trained');
+  text('#train-step-label', state.metadata ? `Checkpoint · step ${number.format(state.metadata.step)}` : 'First training run');
   renderChart();
   renderRecentJobs();
   const last = state.metrics.at(-1);
   const metrics = [
-    ['Passos acumulados', state.metadata ? number.format(state.metadata.step) : '—'],
-    ['Última perda de treino', last ? decimals.format(last.train_loss) : '—'],
-    ['Última perda de validação', last ? decimals.format(last.validation_loss) : '—'],
-    ['Melhor perda de validação', typeof state.best?.validation_loss === 'number' ? decimals.format(state.best.validation_loss) : '—'],
+    ['Total steps', state.metadata ? number.format(state.metadata.step) : '—'],
+    ['Latest training loss', last ? decimals.format(last.train_loss) : '—'],
+    ['Latest validation loss', last ? decimals.format(last.validation_loss) : '—'],
+    ['Best validation loss', typeof state.best?.validation_loss === 'number' ? decimals.format(state.best.validation_loss) : '—'],
   ];
   $('#training-metrics').replaceChildren(...metrics.map(([label, value]) => {
     const row = element('div', 'metric-row'); row.append(element('span', null, label), element('strong', null, value)); return row;
@@ -169,16 +169,16 @@ function renderChart() {
   if (!points.length) {
     const empty = element('div', 'chart-empty');
     const holder = element('div', 'chart-empty-icon'); holder.append(icon('train'));
-    empty.append(holder, element('strong', null, 'Sua curva de aprendizado começa no próximo ciclo.'), element('p', null, 'Treine com validação para acompanhar a evolução.'));
+    empty.append(holder, element('strong', null, 'Your learning curve starts with the next cycle.'), element('p', null, 'Train with validation to track progress.'));
     container.replaceChildren(empty);
-    text('#chart-caption', 'As métricas aparecem a cada ciclo de validação.');
+    text('#chart-caption', 'Metrics appear after each validation cycle.');
     return;
   }
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   svg.setAttribute('viewBox', '0 0 600 224');
   svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', 'Perda de treino e validação por passo de treinamento');
+  svg.setAttribute('aria-label', 'Training and validation loss by training step');
   const add = (name, attributes, content) => {
     const node = document.createElementNS(ns, name);
     for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, String(value));
@@ -201,21 +201,21 @@ function renderChart() {
     add('polyline', {points: coordinates, fill: 'none', stroke: color, 'stroke-width': 2});
     for (const item of points) {
       const circle = add('circle', {cx: x(item.step), cy: y(item[field]), r: points.length > 40 ? 1.5 : 3, fill: color, stroke: 'white', 'stroke-width': 1});
-      const title = document.createElementNS(ns, 'title'); title.textContent = `Passo ${item.step}: ${decimals.format(item[field])}`; circle.append(title);
+      const title = document.createElementNS(ns, 'title'); title.textContent = `Step ${item.step}: ${decimals.format(item[field])}`; circle.append(title);
     }
   }
   add('text', {x: x(firstStep), y: 211, 'text-anchor': 'middle', class: 'chart-axis'}, number.format(firstStep));
   if (lastStep !== firstStep) add('text', {x: x(lastStep), y: 211, 'text-anchor': 'middle', class: 'chart-axis'}, number.format(lastStep));
   container.replaceChildren(svg);
-  text('#chart-caption', `Validação mais recente · ${points.length} ${points.length === 1 ? 'medição' : 'medições'}`);
+  text('#chart-caption', `Latest validation · ${points.length} ${points.length === 1 ? 'measurement' : 'measurements'}`);
 }
 function jobColor(status) { return status === 'completed' ? 'green' : status === 'running' ? 'amber' : 'red'; }
 function renderRecentJobs() {
-  text('#activity-count', `${state.jobs.length} ${state.jobs.length === 1 ? 'tarefa' : 'tarefas'}`);
+  text('#activity-count', `${state.jobs.length} ${state.jobs.length === 1 ? 'job' : 'jobs'}`);
   const container = $('#recent-jobs');
   if (!state.jobs.length) {
     const empty = element('div', 'empty-activity');
-    empty.append(icon('clock'), element('strong', null, 'Espaço para novos experimentos.'), element('p', null, 'Suas execuções e resultados vão aparecer aqui. Comece gerando uma continuação.'));
+    empty.append(icon('clock'), element('strong', null, 'Room for new experiments.'), element('p', null, 'Your runs and results will appear here. Start by generating a continuation.'));
     container.replaceChildren(empty); return;
   }
   container.replaceChildren(...state.jobs.slice(0, 4).map(job => {
@@ -234,13 +234,13 @@ function renderRecentJobs() {
 function profileManifest() { return state.profiles.find(profile => profile.id === $('#dataset-profile').value)?.manifest; }
 function renderDataset() {
   if (!state) return;
-  text('#pdf-count-label', `${number.format(state.pdf_count)} PDFs no corpus`);
+  text('#pdf-count-label', `${number.format(state.pdf_count)} PDFs in the corpus`);
   const manifest = profileManifest();
   const items = [
-    ['Documentos de treino', manifest ? number.format(manifest.train_documents.length) : '—', 'Documentos únicos'],
-    ['Documentos de validação', manifest ? number.format(manifest.valid_documents.length) : '—', 'Separação persistente'],
-    ['Volume do dataset', manifest ? bytes((manifest.train_bytes || 0) + (manifest.valid_bytes || 0)) : '—', 'Formato binário de bytes'],
-    ['Duplicatas excluídas', manifest ? number.format(manifest.skipped_duplicates?.length || 0) : '—', 'Na última preparação'],
+    ['Training documents', manifest ? number.format(manifest.train_documents.length) : '—', 'Unique documents'],
+    ['Validation documents', manifest ? number.format(manifest.valid_documents.length) : '—', 'Persistent split'],
+    ['Dataset size', manifest ? bytes((manifest.train_bytes || 0) + (manifest.valid_bytes || 0)) : '—', 'Binary byte format'],
+    ['Excluded duplicates', manifest ? number.format(manifest.skipped_duplicates?.length || 0) : '—', 'In the latest preparation'],
   ];
   $('#dataset-stats').replaceChildren(...items.map(([label, value, footnote]) => {
     const card = element('article', 'stat-card'); card.append(element('div', 'stat-top', label), element('strong', null, value), element('div', 'stat-bottom', footnote)); return card;
@@ -251,17 +251,17 @@ function renderDataset() {
   pdfKey = key;
   const files = state.pdfs.filter(file => file.name.toLowerCase().includes(query));
   if (!files.length) {
-    const row = element('tr'); const cell = element('td', 'empty-row', query ? 'Nenhum documento encontrado.' : 'Nenhum PDF no corpus. Adicione arquivos à pasta corpus/pdfs.'); cell.colSpan = 4; row.append(cell); $('#pdf-table').replaceChildren(row); return;
+    const row = element('tr'); const cell = element('td', 'empty-row', query ? 'No documents found.' : 'No PDFs in the corpus. Add files to the selected subject\'s pdfs folder.'); cell.colSpan = 4; row.append(cell); $('#pdf-table').replaceChildren(row); return;
   }
   $('#pdf-table').replaceChildren(...files.map(file => {
     const row = element('tr');
     const name = element('td'); const holder = element('div', 'pdf-name'); const info = element('div');
     info.append(element('strong', null, file.name), element('small', null, file.path));
     holder.append(element('span', 'pdf-file-icon', 'PDF'), info); name.append(holder);
-    const type = element('td'); type.append(tag('DOCUMENTAÇÃO'));
+    const type = element('td'); type.append(tag('DOCUMENTATION'));
     const size = element('td', null, bytes(file.bytes));
-    const linkCell = element('td'); const link = element('a', 'pdf-link', 'Abrir');
-    link.href = `/files?path=${encodeURIComponent(file.path)}`; link.target = '_blank'; link.rel = 'noopener'; link.setAttribute('aria-label', `Abrir ${file.name}`); link.append(icon('external')); linkCell.append(link);
+    const linkCell = element('td'); const link = element('a', 'pdf-link', 'Open');
+    link.href = `/files?path=${encodeURIComponent(file.path)}`; link.target = '_blank'; link.rel = 'noopener'; link.setAttribute('aria-label', `Open ${file.name}`); link.append(icon('external')); linkCell.append(link);
     row.append(name, type, size, linkCell); return row;
   }));
 }
@@ -270,30 +270,30 @@ function score(value, label) {
 }
 function renderEvaluation() {
   const benchmark = state.benchmark;
-  $('#benchmark-summary').replaceChildren(score(benchmark ? `${benchmark.syntax_passes}/${benchmark.total}` : '—', 'Sintaxe válida'), score(benchmark ? `${benchmark.behavior_passes}/${benchmark.total}` : '—', 'Comportamento correto'));
+  $('#benchmark-summary').replaceChildren(score(benchmark ? `${benchmark.syntax_passes}/${benchmark.total}` : '—', 'Valid syntax'), score(benchmark ? `${benchmark.behavior_passes}/${benchmark.total}` : '—', 'Correct behavior'));
   const container = $('#benchmark-results');
   const signature = JSON.stringify(benchmark);
   if (container.dataset.result !== signature) {
     container.dataset.result = signature;
     if (!benchmark?.results?.length) {
-      const empty = element('div', 'empty-activity'); empty.append(icon('check'), element('strong', null, 'Ainda não há um benchmark.'), element('p', null, 'Execute os exercícios para estabelecer uma referência.')); container.replaceChildren(empty);
+      const empty = element('div', 'empty-activity'); empty.append(icon('check'), element('strong', null, 'No benchmark yet.'), element('p', null, 'Run the exercises to establish a baseline.')); container.replaceChildren(empty);
     } else container.replaceChildren(...benchmark.results.map(result => {
       const details = element('details', 'benchmark-item');
       const summary = element('summary');
-      summary.append(icon('code'), element('code', null, `${result.name}()`), tag(result.syntax_valid ? 'SINTAXE VÁLIDA' : 'SINTAXE INVÁLIDA', result.syntax_valid ? 'green' : 'amber'), element('span', null, result.behavior_status === 'passed' ? `${result.passed}/${result.total} testes` : result.behavior_status === 'failed' ? `${result.passed}/${result.total} testes` : result.behavior_status === 'unsupported' ? 'Fora do escopo do interpretador' : 'Comportamento não verificado'));
+      summary.append(icon('code'), element('code', null, `${result.name}()`), tag(result.syntax_valid ? 'VALID SYNTAX' : 'INVALID SYNTAX', result.syntax_valid ? 'green' : 'amber'), element('span', null, result.behavior_status === 'passed' ? `${result.passed}/${result.total} tests` : result.behavior_status === 'failed' ? `${result.passed}/${result.total} tests` : result.behavior_status === 'unsupported' ? 'Outside the interpreter\'s scope' : 'Behavior not checked'));
       details.append(summary, element('pre', null, result.source)); return details;
     }));
   }
   const evaluation = state.evaluation;
   if (evaluation) {
     const items = [];
-    for (const [label, value] of [['VALIDATION LOSS', evaluation.loss], ['PERPLEXIDADE', evaluation.perplexity]]) {
+    for (const [label, value] of [['VALIDATION LOSS', evaluation.loss], ['PERPLEXITY', evaluation.perplexity]]) {
       const node = element('div', 'evaluation-value'); node.append(element('span', null, label), element('strong', null, decimals.format(value))); items.push(node);
     }
     $('#evaluation-result').replaceChildren(...items);
     $('#evaluation-caption').hidden = false;
-    text('#evaluation-caption', `Última execução · ${evaluation.samples ? `${evaluation.samples} amostras · ` : ''}${date(evaluation.finished_at)} · ${evaluation.dataset}`);
-    $('#evaluation-result').title = `Última avaliação concluída em ${date(evaluation.finished_at)} · ${evaluation.dataset}`;
+    text('#evaluation-caption', `Latest run · ${evaluation.samples ? `${evaluation.samples} samples · ` : ''}${date(evaluation.finished_at)} · ${evaluation.dataset}`);
+    $('#evaluation-result').title = `Latest evaluation completed at ${date(evaluation.finished_at)} · ${evaluation.dataset}`;
   }
 }
 function renderConfigurationList() {
@@ -313,8 +313,8 @@ function renderTools() {
   $('#tool-availability').replaceChildren(...state.tools.map(tool => {
     const card = element('article', 'tool-status-card');
     const info = element('div');
-    info.append(element('strong', null, tool.id === 'nmap' ? 'Nmap' : 'Nuclei'), element('small', null, tool.executable || 'Não encontrado no PATH'));
-    card.append(icon('check'), info, tag(tool.installed ? 'INSTALADO' : 'INDISPONÍVEL', tool.installed ? 'green' : 'amber'));
+    info.append(element('strong', null, tool.id === 'nmap' ? 'Nmap' : 'Nuclei'), element('small', null, tool.executable || 'Not found on PATH'));
+    card.append(icon('check'), info, tag(tool.installed ? 'INSTALLED' : 'UNAVAILABLE', tool.installed ? 'green' : 'amber'));
     return card;
   }));
   const plan = state.tool_plan;
@@ -327,16 +327,16 @@ function renderTools() {
     $('#tool-authorized').checked = false;
   }
   text('#tool-plan-context', `${plan.tool} · ${plan.target} · ${date(plan.created_at)}`);
-  text('#tool-plan-badge', plan.status === 'ready' ? 'PRONTO PARA REVISÃO' : 'PROPOSTA REJEITADA');
-  text('#tool-plan-goal', `Objetivo: ${plan.goal}`);
-  text('#tool-command', plan.command || 'Nenhum comando executável foi produzido.');
-  text('#tool-reason', plan.reason || 'O modelo precisa produzir argumentos válidos no formato esperado.');
+  text('#tool-plan-badge', plan.status === 'ready' ? 'READY FOR REVIEW' : 'PROPOSAL REJECTED');
+  text('#tool-plan-goal', `Goal: ${plan.goal}`);
+  text('#tool-command', plan.command || 'No executable command was produced.');
+  text('#tool-reason', plan.reason || 'The model must produce valid arguments in the expected format.');
   $('#tool-plan-error').hidden = plan.status === 'ready';
   text('#tool-plan-error', plan.error || '');
   $('#tool-authorization-label').hidden = plan.status !== 'ready';
   text('#tool-authorized-target', plan.target);
   $('#tool-goal-note').hidden = !plan.goal_truncated;
-  text('#tool-goal-note', plan.goal_truncated ? `Objetivo reduzido para caber no contexto do modelo: ${plan.goal_used}` : '');
+  text('#tool-goal-note', plan.goal_truncated ? `Goal shortened to fit the model context: ${plan.goal_used}` : '');
   $('#tool-raw-details').hidden = !plan.model_response;
   text('#tool-raw-response', plan.model_response || '');
   $('#tool-plan-stale').hidden = !toolPlanStale;
@@ -385,16 +385,16 @@ async function updateJob(scroll = false) {
     text('#task-command', job.command.slice(2).join(' '));
     const output = $('#task-output');
     const atBottom = output.scrollTop + output.clientHeight >= output.scrollHeight - 50;
-    output.textContent = job.output || 'Iniciando o processo local…';
+    output.textContent = job.output || 'Starting the local process…';
     if (atBottom || scroll) output.scrollTop = output.scrollHeight;
-    text('#task-time', `Início ${date(job.created_at)}${job.finished_at ? ` · término ${date(job.finished_at)}` : ' · em andamento'}`);
+    text('#task-time', `Started ${date(job.created_at)}${job.finished_at ? ` · finished ${date(job.finished_at)}` : ' · in progress'}`);
     $('#task-dot').classList.toggle('offline', ['failed', 'cancelled', 'interrupted'].includes(job.status));
     if (job.action === 'generate') {
       const hasOutput = Boolean(job.output);
       $('#generation-empty').hidden = hasOutput;
       $('#generation-output').hidden = !hasOutput;
       $('#generation-output').textContent = job.output;
-      text('#generation-status', job.status === 'running' ? 'Gerando continuação…' : statuses[job.status] || job.status);
+      text('#generation-status', job.status === 'running' ? 'Generating response…' : statuses[job.status] || job.status);
       $('#copy-output').disabled = !hasOutput;
     }
     renderBusy();
@@ -412,7 +412,7 @@ async function refresh() {
     }
     $('#error-banner').hidden = true;
     $('#connection-dot').classList.remove('offline');
-    text('#connection-label', 'Servidor conectado');
+    text('#connection-label', 'Server connected');
     initializeForms();
     renderOverview(); renderDataset(); renderEvaluation(); renderConfigurationList(); renderTools();
     if (!selectedJob && state.jobs.length) selectedJob = state.jobs[0].id;
@@ -422,9 +422,9 @@ async function refresh() {
     if (currentView() === 'settings' && !currentConfig) await loadConfiguration('train');
   } catch (error) {
     $('#error-banner').hidden = false;
-    text('#error-banner', `Não foi possível atualizar o workspace. Confira se o servidor local está em execução.\n${error.message}`);
+    text('#error-banner', `Unable to refresh the workspace. Check that the local server is running.\n${error.message}`);
     $('#connection-dot').classList.add('offline');
-    text('#connection-label', 'Servidor indisponível');
+    text('#connection-label', 'Server unavailable');
     $$('.job-trigger').forEach(button => { button.disabled = true; });
   } finally { refreshing = false; }
 }
@@ -438,7 +438,7 @@ async function startJob(action, params) {
     currentJob = job;
     pendingJob = job;
     state.jobs = [job, ...state.jobs.filter(previous => previous.id !== job.id)];
-    toast(`${actions[action]} iniciado.`);
+    toast(`${actions[action]} started.`);
     await refresh();
     await updateJob(action !== 'generate');
     renderBusy();
@@ -472,20 +472,21 @@ $('#tool-plan-form').addEventListener('input', () => {
 $('#tool-select').addEventListener('change', () => {
   const nuclei = $('#tool-select').value === 'nuclei';
   $('#tool-target').placeholder = nuclei ? 'http://192.168.1.10:8080' : '192.168.1.10';
-  text('#tool-target-hint', nuclei ? 'Nuclei aceita uma origem HTTP(S) com IPv4 local, sem caminhos ou parâmetros.' : 'Nmap aceita um único IPv4 privado ou de loopback.');
+  text('#tool-target-hint', nuclei ? 'Nuclei accepts a local IPv4 HTTP(S) origin without paths or parameters.' : 'Nmap accepts a single private or loopback IPv4 address.');
 });
 $$('input, textarea, select').forEach(input => {
   input.addEventListener('input', () => { input.dataset.dirty = 'true'; });
 });
 $$('[data-prompt]').forEach(button => button.addEventListener('click', () => {
+  $('#generate-mode').value = button.dataset.mode || 'continuation';
   $('#generate-prompt').value = button.dataset.prompt;
   $('#generate-prompt').dataset.dirty = 'true';
   $('#generate-prompt').focus();
 }));
 $('#copy-output').disabled = true;
 $('#copy-output').addEventListener('click', async () => {
-  try { await navigator.clipboard.writeText($('#generation-output').textContent); toast('Saída copiada.'); }
-  catch { toast('Selecione o texto da saída para copiar.', true); }
+  try { await navigator.clipboard.writeText($('#generation-output').textContent); toast('Output copied.'); }
+  catch { toast('Select the output text to copy it.', true); }
 });
 $('#refresh-button').addEventListener('click', async event => {
   event.currentTarget.classList.add('busy');
@@ -500,7 +501,7 @@ $('#cancel-job-button').addEventListener('click', async () => {
   if (!currentJob || currentJob.status !== 'running') return;
   try {
     await api(`/api/jobs/${currentJob.id}/cancel`, {method: 'POST', body: '{}'});
-    toast('Interrupção solicitada. Aguardando o processo encerrar.');
+    toast('Cancellation requested. Waiting for the process to stop.');
     await refresh();
   } catch (error) { toast(error.message, true); }
 });
@@ -512,7 +513,7 @@ $('#config-form').addEventListener('submit', async event => {
     const value = JSON.parse($('#config-content').value);
     const result = await api('/api/config', {method: 'POST', body: JSON.stringify({name: currentConfig, value})});
     drafts.delete(currentConfig);
-    toast(result.restart_required ? 'Arquivo salvo. Reinicie o servidor para aplicar estas opções.' : 'Configuração salva e validada.');
+    toast(result.restart_required ? 'File saved. Restart the server to apply these settings.' : 'Configuration saved and validated.');
     await refresh();
   } catch (error) { toast(error.message, true); }
 });

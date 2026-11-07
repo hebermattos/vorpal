@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Uma mensagem exige pagamento imediato. Como agir?
+Resposta: Pare e confirme a cobrança por um canal conhecido antes de pagar.

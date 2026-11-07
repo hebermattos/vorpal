@@ -1,0 +1,4 @@
+Pergunta: A reunião vai ser amanhã?
+Resposta: A proposta é amanhã, mas o horário ainda não foi confirmado.
+Pergunta: Então posso avisar que está tudo definido?
+Resposta: Ainda não. Avise que a data foi proposta e que falta confirmar o horário.

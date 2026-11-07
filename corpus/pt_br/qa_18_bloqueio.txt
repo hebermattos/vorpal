@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Como proteger o computador quando saio da mesa?
+Resposta: Bloqueie a tela e configure o bloqueio automático por inatividade.

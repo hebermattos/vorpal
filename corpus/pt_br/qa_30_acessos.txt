@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Todos da equipe precisam de acesso administrativo?
+Resposta: Não. Cada pessoa deve ter apenas os acessos necessários ao trabalho.

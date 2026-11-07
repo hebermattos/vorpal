@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Como melhorar a segurança do roteador?
+Resposta: Troque a senha administrativa padrão e mantenha o equipamento atualizado.

@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Quais dados devo coletar em um cadastro?
+Resposta: Colete apenas o necessário e limite quem pode acessar essas informações.

@@ -1,0 +1,3 @@
+Um resumo mantém as informações centrais de um texto e reduz os detalhes secundários. Ele deve preservar o sentido do original sem acrescentar conclusões que não aparecem na fonte. O tamanho depende da finalidade e do público.
+
+Ao resumir um aviso, procure identificar o que vai acontecer, quando e quem será afetado. Se o aviso não informa um horário, não invente esse dado. Você pode registrar que a informação não foi fornecida.

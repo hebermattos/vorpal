@@ -1,0 +1,3 @@
+Um exemplo aproxima uma ideia de uma situação conhecida. Para explicar uma fila de tarefas, podemos pensar em pessoas esperando atendimento. Cada pessoa representa uma solicitação, e o atendimento corresponde ao processamento.
+
+A comparação tem limites: sistemas podem usar prioridades e regras que não aparecem em uma fila comum. Por isso, um exemplo deve ajudar a começar a compreensão, sem substituir uma descrição mais precisa quando ela for necessária.

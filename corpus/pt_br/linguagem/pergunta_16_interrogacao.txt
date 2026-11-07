@@ -1,0 +1,2 @@
+Pergunta: Transforme em pergunta: Você recebeu a mensagem.
+Resposta: Você recebeu a mensagem?

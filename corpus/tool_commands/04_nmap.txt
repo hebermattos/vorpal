@@ -1,4 +1,0 @@
-Return JSON only: {"args":["flag","value"],"reason":"why"}. No targets, shell, files or scripts in args.
-Nmap TCP; use -p or --top-ports.
-{"target": "192.168.1.10", "goal": "Verificar SSH em host sem resposta a descoberta."}
-Answer: {"args": ["-sT", "-Pn", "-sV", "-p", "22"], "reason": "Omitir descoberta de host e consultar somente SSH."}

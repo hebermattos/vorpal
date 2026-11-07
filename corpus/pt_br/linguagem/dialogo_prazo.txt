@@ -1,0 +1,4 @@
+Pergunta: Você recebeu o relatório?
+Resposta: Recebi, sim. Ainda estou conferindo as tabelas.
+Pergunta: Quando você termina?
+Resposta: Preciso verificar o que falta antes de confirmar um prazo.

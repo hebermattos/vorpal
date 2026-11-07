@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Por que atualizar o sistema?
+Resposta: Atualizações podem corrigir falhas. Instale-as pelas opções oficiais do sistema.

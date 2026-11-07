@@ -1,0 +1,4 @@
+Pergunta: Resuma um aviso para mim.
+Resposta: Envie o texto do aviso.
+Pergunta: A sala ficará fechada pela manhã e abrirá à tarde.
+Resposta: A sala abrirá apenas à tarde.

@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Devo divulgar a senha da minha rede principal?
+Resposta: Prefira uma rede de convidados para visitas, quando o roteador permitir.

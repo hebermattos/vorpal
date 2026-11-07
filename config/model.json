@@ -1,7 +1,7 @@
 {
   "functions": {
     "build_model": {
-      "context": 256,
+      "context": 512,
       "d_model": 96,
       "layers": 3,
       "heads": 4,

@@ -40,7 +40,7 @@ class WebApplicationTests(unittest.TestCase):
         (self.root / 'corpus/pdfs').mkdir(parents=True)
         (self.root / 'corpus/pdfs/example.pdf').write_bytes(b'%PDF-fixture')
         (self.root / 'web').mkdir()
-        (self.root / 'web/index.html').write_text('<html lang="pt-BR">Vorpal</html>')
+        (self.root / 'web/index.html').write_text('<html lang="en">Vorpal</html>')
         settings = copy.deepcopy(load_config('web'))
         self.app = Application(self.root, settings)
         self.addCleanup(self.temporary.cleanup)
@@ -54,12 +54,23 @@ class WebApplicationTests(unittest.TestCase):
         self.assertEqual(command[command.index('--max-new') + 1], '16')
         self.assertIn('--checkpoint', command)
 
+    def test_security_question_uses_question_argument(self):
+        question = 'Como proteger minhas contas?'
+        command = self.app.command('generate', {'prompt': question, 'mode': 'security'})
+        self.assertEqual(command[command.index('--question') + 1], question)
+        self.assertNotIn('--prompt', command)
+        with self.assertRaises(ValueError):
+            self.app.command('generate', {'prompt': question, 'mode': 'invalid'})
+
+    def test_legacy_security_profile_resolves_to_canonical_profile(self):
+        self.assertEqual(self.app.profile('seguranca'), self.app.profile('security'))
+
     def test_train_replay_and_dataset_actions_preserve_existing_cli(self):
         command = self.app.command('train', {'profile': 'python', 'mode': 'replay', 'steps': 3, 'batch': 1, 'threads': 2})
         self.assertIn('--replay', command)
         self.assertNotIn('--reset', command)
-        self.assertEqual(command[command.index('--corpus') + 1], 'corpus/python_basics')
-        self.assertEqual(command[command.index('--out') + 1], 'data/python_basics')
+        self.assertEqual(command[command.index('--corpus') + 1], 'corpus/python')
+        self.assertEqual(command[command.index('--out') + 1], 'data/python')
         prepare = self.app.command('prepare', {'profile': 'complete'})
         self.assertTrue(prepare[2].endswith('/src/data.py'))
         importer = self.app.command('import', {'profile': 'complete'})

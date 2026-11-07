@@ -1,0 +1,3 @@
+Uma pergunta bem formulada informa o objetivo e o contexto necessário. Se alguém pede ajuda com um programa, pode explicar o que tentou fazer e o que aconteceu. A mensagem de erro também pode ajudar, desde que não contenha dados sensíveis.
+
+Quem responde deve distinguir o que sabe do que está supondo. Quando faltar uma informação importante, é melhor pedir um esclarecimento. Uma resposta curta e correta costuma ser mais útil do que uma explicação extensa sem fundamento.

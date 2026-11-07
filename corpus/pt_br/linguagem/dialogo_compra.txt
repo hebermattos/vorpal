@@ -1,0 +1,4 @@
+Pergunta: Esta mesa cabe no meu quarto?
+Resposta: Quais são as medidas da mesa e do espaço disponível?
+Pergunta: Ainda não medi o quarto.
+Resposta: Meça o espaço e considere também a área para abrir portas e circular.

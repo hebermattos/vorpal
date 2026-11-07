@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Um desconhecido pede acesso remoto ao computador. Aceito?
+Resposta: Não conceda acesso. Confirme a solicitação com o suporte por um canal conhecido.

@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Para que serve a autenticação em dois fatores?
+Resposta: Ela exige uma segunda verificação além da senha para entrar na conta.

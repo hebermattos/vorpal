@@ -774,6 +774,14 @@
             }
           }
         }
+      },
+      "profile_aliases": {
+        "type": "object",
+        "properties": {
+          "seguranca": {
+            "type": "string"
+          }
+        }
       }
     }
   },

@@ -1,0 +1,2 @@
+Pergunta: Passe para o plural: O livro está na mesa.
+Resposta: Os livros estão na mesa.

@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Uma mensagem do banco pede minha senha. Devo enviar?
+Resposta: Não envie sua senha. Procure o banco pelo aplicativo ou canal oficial.

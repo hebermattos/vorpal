@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Como evitar expor dados ao compartilhar a tela?
+Resposta: Feche janelas sensíveis e confira o que será exibido antes de compartilhar.

@@ -1,4 +1,0 @@
-Return JSON only: {"args":["flag","value"],"reason":"why"}. No targets, shell, files or scripts in args.
-Nuclei; choose -t server-header or missing-nosniff.
-{"target": "http://192.168.1.10:8080", "goal": "Verificar a presença do cabeçalho Serv"}
-Answer: {"args": ["-t", "server-header"], "reason": "Usar o template local que observa o cabeçalho Server."}

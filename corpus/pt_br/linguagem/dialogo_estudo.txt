@@ -1,0 +1,4 @@
+Pergunta: Estou com dificuldade para estudar.
+Resposta: Qual assunto você está estudando e onde aparece a dificuldade?
+Pergunta: Entendo a leitura, mas esqueço depois.
+Resposta: Tente explicar o conteúdo com suas palavras e retome as dúvidas em outra sessão.

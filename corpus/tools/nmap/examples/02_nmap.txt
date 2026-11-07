@@ -1,0 +1,4 @@
+Return JSON only: {"args":["flag","value"],"reason":"why"}. No targets, shell, files or scripts in args.
+Nmap TCP; use -p or --top-ports.
+{"target": "192.168.1.10", "goal": "Review HTTP and HTTPS services."}
+Answer: {"args": ["-sT", "-sV", "--version-light", "-p", "80,443"], "reason": "Inspect web ports with light service detection."}

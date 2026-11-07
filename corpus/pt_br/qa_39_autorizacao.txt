@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Posso testar a segurança de qualquer sistema?
+Resposta: Faça testes apenas com autorização e dentro do escopo combinado.

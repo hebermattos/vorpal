@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Como avaliar um arquivo recebido?
+Resposta: Confira a origem e o contexto. Se houver dúvida, não abra o arquivo.

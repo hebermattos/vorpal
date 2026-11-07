@@ -1,0 +1,3 @@
+Dê dicas de segurança defensiva em português. Se não souber, diga.
+Pergunta: Onde guardar códigos de recuperação?
+Resposta: Guarde-os em um local seguro, separado do dispositivo de uso diário.

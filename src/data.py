@@ -23,8 +23,8 @@ def is_internal_file(name):
     return name in SETTINGS["policy"]["skip_files"]
 
 
-def _split_documents(docs, out):
-    """Persist content-hash assignments, including documents absent this run."""
+def _split_history(out):
+    """Read persisted hash assignments, including documents absent this run."""
     state_path = out / 'split_state.json'
     previous_path = state_path if state_path.exists() else out / 'manifest.json'
     previous = {}
@@ -43,6 +43,13 @@ def _split_documents(docs, out):
             raise ValueError(f'Invalid dataset split state {previous_path}: {exc}') from exc
     else:
         train_hashes, valid_hashes = set(), set()
+    return train_hashes, valid_hashes
+
+
+def _split_documents(docs, out):
+    """Persist content-hash assignments, including documents absent this run."""
+    state_path = out / 'split_state.json'
+    train_hashes, valid_hashes = _split_history(out)
     digest = lambda doc: hashlib.sha256(doc[1].encode('utf-8')).hexdigest()
     docs.sort(key=digest)
     train = [doc for doc in docs if digest(doc) in train_hashes]
@@ -69,7 +76,8 @@ def _split_documents(docs, out):
 def prepare(root, out, *, exclude_hashes=()):
     root, out = Path(root).resolve(), Path(out)
     excluded = set(exclude_hashes)
-    docs, seen, rejected = [], set(), []
+    candidates, omitted, rejected = {}, set(), []
+    known_train, known_valid = _split_history(out)
     skipped_internal, duplicates = [], []
     output_root = out.resolve()
     for path in sorted(root.rglob('*')):
@@ -86,11 +94,20 @@ def prepare(root, out, *, exclude_hashes=()):
         digest = hashlib.sha256(text.encode()).hexdigest()
         # Keep existing document IDs, but collapse importer-added trailing newlines.
         duplicate_key = hashlib.sha256(text.rstrip().encode('utf-8')).hexdigest()
-        if duplicate_key in seen:
-            duplicates.append(str(path.relative_to(root))); continue
-        seen.add(duplicate_key)
-        if digest in excluded: continue
-        docs.append((str(path.relative_to(root)), text))
+        candidate = (str(path.relative_to(root)), text, digest)
+        if digest in excluded:
+            omitted.add(duplicate_key)
+        previous = candidates.get(duplicate_key)
+        if previous is not None:
+            rank = lambda item: (item[2] in known_valid, item[2] in known_train)
+            if rank(candidate) > rank(previous):
+                duplicates.append(previous[0])
+                candidates[duplicate_key] = candidate
+            else:
+                duplicates.append(candidate[0])
+        else:
+            candidates[duplicate_key] = candidate
+    docs = [(name, text) for key, (name, text, _) in candidates.items() if key not in omitted]
     if not docs and not excluded:
         raise SystemExit('No valid documents found. Add .py/.md/.txt files under corpus/.')
     train, valid = _split_documents(docs, out)

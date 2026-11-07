@@ -1,0 +1,3 @@
+Organizar arquivos por assunto pode facilitar a busca, desde que os nomes sejam claros. Uma pasta chamada "relatórios" informa mais do que uma pasta chamada "coisas". Datas e versões também ajudam quando existem documentos parecidos.
+
+Evite criar uma estrutura tão complexa que ninguém consiga mantê-la. Combine critérios simples com as pessoas que usam os arquivos. Quando houver uma mudança, explique o novo local e confira se os acessos continuam adequados.
