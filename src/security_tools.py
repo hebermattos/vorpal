@@ -268,6 +268,22 @@ def proposal_from_response(tool, target, goal, response, *, settings=None, root=
     return plan
 
 
+def planning_schema(tool, settings, constraints=None):
+    """Constrain model syntax while keeping deterministic policy validation authoritative."""
+    item = {'type': 'string', 'minLength': 1}
+    if tool == 'nmap' and (constraints or {}).get('port_selection_owned_by_application'):
+        tokens = set(settings['tools'][tool]['flags']) - {'-F'}
+        if settings['tools'][tool]['values'].get('-T') == 'timing':
+            tokens.update(('-T', '2', '3'))
+        item['enum'] = sorted(tokens)
+    return {'type': 'object', 'additionalProperties': False, 'required': ['args', 'reason'],
+            'properties': {'args': {'type': 'array', 'minItems': 1,
+                                    'maxItems': settings['runtime']['max_args'], 'items': item},
+                           'reason': {'type': 'string', 'minLength': 1,
+                                      'maxLength': settings['runtime']['max_reason_chars'],
+                                      'pattern': r'^[^\r\n]+$'}}}
+
+
 def propose(tool, target, goal, *, settings=None, root=ROOT, client=None, database=None, constraints=None, feedback=None):
     """Use local Ollama + RAG to propose arguments, never execute them."""
     settings = _settings(settings)
@@ -281,7 +297,8 @@ def propose(tool, target, goal, *, settings=None, root=ROOT, client=None, databa
     path = Path(database or load_config('rag')['database'])
     if not path.is_file():
         raise ToolPlanError('RAG index is required. Run: python vorpal.py knowledge update')
-    model_settings = load_config('scan_intelligence')
+    model_settings = dict(load_config('scan_intelligence'))
+    model_settings['response_schema'] = planning_schema(tool, settings, constraints)
     docs = rag.search(tool + ' ' + goal, path, limit=model_settings['rag_results'])
     if not docs:
         raise ToolPlanError('RAG returned no relevant tool documentation.')
@@ -291,6 +308,7 @@ def propose(tool, target, goal, *, settings=None, root=ROOT, client=None, databa
         {'role': 'system', 'content': settings['planner']['instruction'] + settings['planner'][tool]},
         {'role': 'user', 'content': json.dumps({'target': target, 'goal': goal, 'references': context,
                                              'constraints': constraints or {}, 'previous_rejection': feedback,
+                                             'output_schema': model_settings['response_schema'],
                                              'argument_catalog': {key: settings['tools'][tool][key] for key in ('flags', 'values')}})}
     ], model_settings)
     try:

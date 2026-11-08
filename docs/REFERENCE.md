@@ -40,7 +40,12 @@ from the working directory, while the dashboard runs jobs from the project root.
 Inference defaults to `http://127.0.0.1:11434`, model `qwen2.5-coder:3b`.
 Only `127.0.0.1` and `localhost` inference hosts are accepted. HTTP proxies and
 redirects are disabled. Ollama's OpenAI-compatible chat API is used with a JSON
-response format. Requests and replies are bounded; malformed output and
+response format. Tool planning uses a generated JSON schema, with an enum of
+actual allowed option tokens for application-scoped Nmap requests. This uses
+Ollama's [structured output support](https://docs.ollama.com/capabilities/structured-outputs);
+no lifecycle or model-download request is made. Servers must support this
+response format; there is no silent downgrade of planning constraints.
+Requests and replies are bounded; malformed output and
 unsupported source IDs fail closed.
 
 ## Assistant and evidence flow

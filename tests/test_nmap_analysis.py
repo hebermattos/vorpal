@@ -65,6 +65,39 @@ class NmapAnalysisTests(unittest.TestCase):
         self.assertEqual(result['planning_attempts'], 1)
         self.assertEqual(result['argv'][-1], '192.168.0.109')
 
+    def test_planning_schema_excludes_literal_placeholder_arguments(self):
+        seen = []
+        def model(messages, settings):
+            seen.append((messages, settings))
+            return json.dumps({'args': ['-sT', '-sV', '--version-light'], 'reason': 'Identify selected services.'})
+        with patch('security_tools.shutil.which', return_value='/usr/bin/nmap'), patch('collectors.run') as run:
+            result = assistant.analyze_ip('127.0.0.1', authorized=True, tool='nmap', ports='22',
+                                          root=self.root, database=self.db, client=model)
+        run.assert_not_called()
+        schema = seen[0][1]['response_schema']
+        tokens = schema['properties']['args']['items']['enum']
+        self.assertTrue({'-sT', '-sV', '--version-light'} <= set(tokens))
+        self.assertFalse({'flag', 'value', '-F', '--top-ports', '-p'} & set(tokens))
+        payload = json.loads(seen[0][0][-1]['content'])
+        self.assertEqual(payload['output_schema'], schema)
+        self.assertEqual(result['status'], 'command_review_required')
+        self.assertNotIn('"flag","value"', seen[0][0][0]['content'])
+
+    def test_literal_placeholder_response_is_rejected_then_corrected_by_model(self):
+        calls = []
+        def model(messages, settings):
+            calls.append(json.loads(messages[-1]['content']))
+            if len(calls) == 1:
+                return '{"args":["flag","value"],"reason":"why"}'
+            return json.dumps({'args': ['-sT', '-sV', '--version-light'], 'reason': 'Identify selected services.'})
+        with patch('security_tools.shutil.which', return_value='/usr/bin/nmap'), patch('collectors.run') as run:
+            result = assistant.analyze_ip('192.168.0.109', authorized=True, tool='nmap',
+                                          root=self.root, database=self.db, client=model)
+        run.assert_not_called()
+        self.assertIn('flag', calls[1]['previous_rejection'])
+        self.assertEqual(result['planning_attempts'], 2)
+        self.assertNotIn('flag', result['argv'])
+
     def test_conflicting_discovery_modes_are_rejected_with_saved_diagnostics(self):
         response = json.dumps({'args': ['-sT', '-sV', '--version-light', '-F', '-p', '22'],
                                'reason': 'Invalid mixed port selection.'})

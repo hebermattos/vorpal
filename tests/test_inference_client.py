@@ -36,6 +36,20 @@ class InferenceClientTests(unittest.TestCase):
         self.assertIn('config/scan_intelligence.json', str(error.exception))
         self.assertIn(inference.SETTINGS['model'], str(error.exception))
 
+    def test_planner_schema_is_sent_as_structured_response_format(self):
+        schema = {'type': 'object', 'properties': {'args': {'type': 'array', 'items': {
+            'type': 'string', 'enum': ['-sT', '-sV', '--version-light']}}}, 'required': ['args']}
+        settings = dict(inference.SETTINGS, response_schema=schema)
+        opener = MagicMock()
+        opener.open.return_value.__enter__.return_value.read.return_value = json.dumps({
+            'choices': [{'message': {'content': '{"args":["-sT"]}'}}]}).encode()
+        with patch.object(inference.urllib.request, 'build_opener', return_value=opener):
+            inference._local_chat([], settings)
+        payload = json.loads(opener.open.call_args.args[0].data)
+        self.assertEqual(payload['response_format']['type'], 'json_schema')
+        self.assertTrue(payload['response_format']['json_schema']['strict'])
+        self.assertEqual(payload['response_format']['json_schema']['schema'], schema)
+
 
 if __name__ == '__main__':
     unittest.main()
