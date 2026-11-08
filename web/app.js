@@ -405,7 +405,12 @@ async function refresh() {
   if (refreshing) return;
   refreshing = true;
   try {
+    const previousRevision = state?.dev_revision;
     state = await api('/api/state');
+    if (previousRevision && state.dev_revision && JSON.stringify(previousRevision) !== JSON.stringify(state.dev_revision)) {
+      location.reload();
+      return;
+    }
     if (pendingJob) {
       if (state.jobs.some(job => job.id === pendingJob.id)) pendingJob = null;
       else state.jobs.unshift(pendingJob);

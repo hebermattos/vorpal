@@ -16,6 +16,34 @@ from train import prepare_training_corpus, run, run_with_log, save_training_stat
 
 
 class TrainingPipelineTests(unittest.TestCase):
+    def test_prepared_data_bypasses_import_and_corpus_history(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binary = root / 'train.bin'
+            binary.write_bytes(bytes(range(256)) * 3)
+            (root / 'valid.bin').write_bytes(bytes(range(256)) * 3)
+            history = root / 'training_state.json'
+            history.write_text('{"sentinel": true}')
+            args = SimpleNamespace(prepared=True, data=str(binary), validation_data=None,
+                                   corpus='missing-corpus', out=str(root), reset=False,
+                                   replay=False, resume=False, context=8, dim=16, layers=1,
+                                   heads=4, dropout=0.0, batch=1, steps=1, threads=1,
+                                   lr=0.001, seed=42)
+            with patch.object(train_module, 'CHECKPOINT', root / 'latest.keras'), \
+                 patch.object(train_module, 'METADATA', root / 'latest.json'), \
+                 patch('train.prepare_training_corpus') as prepare_corpus, \
+                 patch('train.configure_cpu'):
+                run(args)
+            prepare_corpus.assert_not_called()
+            self.assertEqual(history.read_text(), '{"sentinel": true}')
+            self.assertTrue((root / 'latest.keras').is_file())
+            self.assertFalse((root / 'metrics.jsonl').exists())
+
+    def test_prepared_data_rejects_reset_replay_and_missing_data(self):
+        for data, reset, replay in [(None, False, False), ('input.bin', True, False), ('input.bin', False, True)]:
+            with self.subTest(data=data, reset=reset, replay=replay), self.assertRaises(ValueError):
+                run(SimpleNamespace(prepared=True, data=data, reset=reset, replay=replay))
+
     def test_run_with_log_saves_and_tees_stdout_and_stderr(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             log_dir = Path(temporary_directory) / 'logs'

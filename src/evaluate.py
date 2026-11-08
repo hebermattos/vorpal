@@ -20,8 +20,8 @@ SETTINGS = load_config("evaluate")
 def validation_loss(model, data, *, samples, seed):
     """Measure fixed, held-out byte windows without changing model weights."""
     context = model.get_layer("position_embedding").input_dim
-    if samples < 1 or len(data) <= context + 1:
-        raise ValueError("Validation needs positive samples and more bytes than context + 1")
+    if samples < 1 or len(data) < context + 1:
+        raise ValueError("Validation needs positive samples and at least context + 1 bytes")
     rng = np.random.default_rng(seed)
     losses = []
     for i in rng.integers(0, len(data) - context, size=samples):
@@ -46,7 +46,7 @@ def main():
     model = keras.models.load_model(args.checkpoint, compile=False)
     context = model.get_layer("position_embedding").input_dim
     data = np.frombuffer(Path(args.data).read_bytes(), dtype=np.uint8)
-    if len(data) <= context + 1:
+    if len(data) < context + 1:
         p.error("Validation corpus is too short; add more held-out documents")
     mean = validation_loss(model, data, samples=args.samples, seed=SETTINGS["seed"])
     print(f"Validation loss={mean:.4f}; byte-level perplexity={math.exp(mean):.2f}")

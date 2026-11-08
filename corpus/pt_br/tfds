@@ -1,0 +1,5 @@
+# Official TensorFlow Datasets sources; one reviewed, versioned identifier per line.
+wiki40b/pt:1.3.0
+
+# Optional English-Portuguese GNOME translations (disabled).
+# opus/en-pt_gnome:0.1.0

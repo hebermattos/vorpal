@@ -468,7 +468,10 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     self._send(404, {"error": "Route not found."})
             elif path == "/api/state":
-                self._send(200, app.state())
+                state = app.state()
+                if getattr(self.server, "reload_enabled", False):
+                    state["dev_revision"] = [app.token, source_revision(app.root, frontend=True)]
+                self._send(200, state)
             elif re.fullmatch(r"/api/jobs/[a-f0-9]{24}", path):
                 self._send(200, app.jobs.get(path.rsplit("/", 1)[1]))
             elif path == "/api/config":
@@ -502,15 +505,51 @@ class Handler(BaseHTTPRequestHandler):
             self._send(500, {"error": f"Local error: {exc}"})
 
 
+def source_revision(root, *, frontend=False):
+    """Watch source files only; model, dataset and log writes do not reload."""
+    folders = (("web", "*"),) if frontend else (("src", "*.py"), ("config", "*.json"))
+    files = []
+    for folder, pattern in folders:
+        for path in sorted((root / folder).rglob(pattern)):
+            if path.is_file() and "__pycache__" not in path.parts:
+                try:
+                    stat = path.stat()
+                except FileNotFoundError:
+                    continue
+                files.append((str(path.relative_to(root)), stat.st_mtime_ns, stat.st_size))
+    return files
+
+
+def watch_sources(server, stopped, restart):
+    previous = source_revision(server.app.root)
+    while not stopped.wait(0.5):
+        if source_revision(server.app.root) == previous:
+            continue
+        with server.app.jobs.lock:
+            if server.app.jobs.active():
+                continue
+            server.app.jobs.closed = True
+        print("Source changed; restarting the dashboard…", flush=True)
+        restart.set()
+        server.shutdown()
+        return
+
+
 def main():
     settings = load_config("web")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=settings["server"]["port"])
+    parser.add_argument("--reload", action="store_true", help="Reload the browser on frontend edits and restart idle backend on source/config edits.")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error("--port deve estar entre 1 e 65535")
     app = Application(settings=settings)
     server = Server((settings["server"]["host"], args.port), app)
+    server.reload_enabled = args.reload
+    stopped, restart = threading.Event(), threading.Event()
+    if args.reload:
+        threading.Thread(target=watch_sources, args=(server, stopped, restart), daemon=True).start()
+        print("Development reload enabled (backend reload waits for active jobs).", flush=True)
     print(f"Vorpal Web: http://127.0.0.1:{server.server_address[1]}", flush=True)
     print("Local dashboard · TensorFlow CPU · Ctrl+C to stop", flush=True)
     try:
@@ -518,8 +557,11 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        stopped.set()
         app.jobs.close()
         server.server_close()
+    if restart.is_set():
+        os.execv(sys.executable, [sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
 
 
 if __name__ == "__main__":

@@ -86,10 +86,12 @@ def run_with_log(args):
 
 
 def prepare_training_corpus(args):
+    from tfds_sources import discover_sources, documents
     reset = getattr(args, "reset", False)
     replay = getattr(args, "replay", False)
     if replay and (reset or not CHECKPOINT.is_file() or not METADATA.is_file()):
         raise ValueError("--replay requires an existing checkpoint and metadata, and cannot be combined with --reset")
+    sources = discover_sources(args.corpus)
     output = Path(args.out)
     state_path = output / "training_state.json"
     if reset:
@@ -124,7 +126,8 @@ def prepare_training_corpus(args):
                 save_training_state(output, used_hashes)
         except (json.JSONDecodeError, OSError):
             pass
-    prepare(args.corpus, output, exclude_hashes=() if replay else used_hashes)
+    prepare(args.corpus, output, exclude_hashes=() if replay else used_hashes,
+            external_documents=documents(sources))
     manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
     args.training_hashes = manifest.get("train_document_hashes", []) + manifest.get("valid_document_hashes", [])
     if args.data is None:
@@ -152,16 +155,20 @@ def save_training_state(out, used_hashes):
     temporary_path.replace(state_path)
 
 def load_bytes(path):
-    raw = Path(path).read_bytes()
-    return np.frombuffer(raw, dtype=np.uint8)
+    """Map immutable byte datasets without allocating a full in-memory copy."""
+    path = Path(path)
+    if not path.stat().st_size:
+        return np.empty(0, dtype=np.uint8)
+    return np.memmap(path, dtype=np.uint8, mode="r")
 
 def make_batch(data, context, batch, rng):
-    if len(data) <= context + 1:
+    if context < 1 or batch < 1:
+        raise ValueError("context and batch must be positive")
+    if len(data) < context + 1:
         raise ValueError("Dataset is too small for the requested context")
     starts = rng.integers(0, len(data) - context, size=batch)
-    x = np.stack([data[i:i+context] for i in starts]).astype("int32")
-    y = np.stack([data[i+1:i+context+1] for i in starts]).astype("int32")
-    return as_inputs(x), y
+    windows = data[starts[:, None] + np.arange(context + 1)].astype("int32")
+    return as_inputs(windows[:, :-1]), windows[:, 1:]
 
 
 def save_model_atomic(model, path):
@@ -171,20 +178,26 @@ def save_model_atomic(model, path):
     os.replace(temporary, path)
 
 def run(args):
-    if hasattr(args, "corpus"):
+    prepared = getattr(args, "prepared", False)
+    if prepared and (not args.data or getattr(args, "reset", False) or getattr(args, "replay", False)):
+        raise ValueError("--prepared requires --data and cannot be combined with --reset or --replay")
+    if args.batch < 1 or args.steps < 1:
+        raise ValueError("steps and batch must be positive")
+    learning_rate = getattr(args, "lr", SETTINGS["cli"]["lr"])
+    if not np.isfinite(learning_rate) or learning_rate <= 0:
+        raise ValueError("--lr must be finite and positive")
+    if hasattr(args, "corpus") and not prepared:
         prepare_training_corpus(args)
         if not args.training_hashes:
             print("No new documents to train; all valid corpus documents were already used.", flush=True)
             return
     configure_cpu(args.threads)
-    if args.batch < 1 or args.steps < 1:
-        raise ValueError("steps and batch must be positive")
     config = dict(context=args.context, d_model=args.dim, layers=args.layers,
                   heads=args.heads, dropout=args.dropout)
     if args.dim % args.heads:
         raise ValueError("--dim must be divisible by --heads")
     data = load_bytes(args.data)
-    if len(data) <= args.context + 1:
+    if len(data) < args.context + 1:
         raise ValueError("Train data too small; add documents or reduce --context")
     rng = np.random.default_rng(args.seed)
     tf.random.set_seed(args.seed)
@@ -197,6 +210,8 @@ def run(args):
         if meta["config"] != config:
             raise ValueError("Model configuration does not match checkpoint; run with --reset to train using the new architecture")
         model = keras.models.load_model(CHECKPOINT)
+        # Keep optimizer iterations/moments, but honor this run's CLI/config LR.
+        model.optimizer.learning_rate.assign(learning_rate)
         step_start = int(meta["step"])
         if "rng_state" in meta:
             rng.bit_generator.state = meta["rng_state"]
@@ -204,23 +219,23 @@ def run(args):
             rng = np.random.default_rng(np.random.SeedSequence([args.seed, step_start]))
     else:
         model = build_model(**config)
-        model.compile(optimizer=keras.optimizers.AdamW(learning_rate=args.lr, global_clipnorm=SETTINGS["runtime"]["clipnorm"]),
+        model.compile(optimizer=keras.optimizers.AdamW(learning_rate=learning_rate, global_clipnorm=SETTINGS["runtime"]["clipnorm"]),
                       loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True))
     CHECKPOINT.parent.mkdir(parents=True, exist_ok=True)
     METADATA.parent.mkdir(parents=True, exist_ok=True)
     validation_path = getattr(args, "validation_data", None)
-    if validation_path is None and hasattr(args, "out"):
+    if validation_path is None and hasattr(args, "out") and not prepared:
         validation_path = Path(args.out) / "valid.bin"
     validation = load_bytes(validation_path) if validation_path and Path(validation_path).is_file() else None
     if validation_path and getattr(args, "validation_data", None) and validation is None:
         raise FileNotFoundError(f"Validation file not found: {validation_path}")
-    if validation is not None and len(validation) <= args.context + 1:
+    if validation is not None and len(validation) < args.context + 1:
         print("Validation skipped: held-out corpus is too short for this context.", flush=True)
         validation = None
     best_path = CHECKPOINT.with_name(SETTINGS["runtime"]["best_checkpoint_name"])
     best_metadata = CHECKPOINT.with_name(SETTINGS["runtime"]["best_metadata_name"])
     metrics_path = CHECKPOINT.with_name(SETTINGS["runtime"]["metrics_name"])
-    validation_id = hashlib.sha256(validation.tobytes()).hexdigest() if validation is not None else None
+    validation_id = hashlib.sha256(validation).hexdigest() if validation is not None else None
     evaluation_config = {"validation_sha256": validation_id, "config": config,
                          "samples": SETTINGS["runtime"]["validation_samples"],
                          "seed": SETTINGS["runtime"]["validation_seed"]}
@@ -243,7 +258,10 @@ def run(args):
     final_step = step_start + args.steps
     for step in range(step_start + 1, final_step + 1):
         inputs, targets = make_batch(data, args.context, args.batch, rng)
+        model.reset_metrics()
         loss = float(model.train_on_batch(inputs, targets))
+        if not np.isfinite(loss):
+            raise FloatingPointError(f"Non-finite training loss at step {step}; keeping the last saved checkpoint. Try a lower --lr and review the dataset.")
         if step == 1 or step % SETTINGS["runtime"]["log_interval"] == 0:
             print(f"step={step} loss={loss:.4f}", flush=True)
         if validation is not None and (step % SETTINGS["runtime"]["validation_interval"] == 0 or step == final_step):
@@ -268,7 +286,7 @@ def run(args):
                                                "rng_state": rng.bit_generator.state},
                                                indent=2), encoding="utf-8")
             os.replace(metadata_tmp, METADATA)
-            if hasattr(args, "training_hashes"):
+            if hasattr(args, "training_hashes") and not prepared:
                 save_training_state(args.out, args.training_hashes)
                 print(f"Recorded {len(args.training_hashes)} processed document hash(es).", flush=True)
     print(f"Checkpoint saved to {CHECKPOINT}", flush=True)
@@ -293,6 +311,8 @@ def main():
     p.add_argument("--out", default=None)
     p.add_argument("--log-dir", default=SETTINGS["cli"]["log_dir"], help="Directory for timestamped training logs")
     p.add_argument("--data", default=None, help="Use this train file after importing and preparing the corpus")
+    p.add_argument("--prepared", action="store_true",
+                   help="Train existing --data bytes without importing, resplitting or updating corpus document history.")
     p.add_argument("--validation-data", default=None, help="Override the held-out validation binary")
     mode = p.add_mutually_exclusive_group()
     mode.add_argument("--resume", action="store_true", help="Explicitly resume the existing checkpoint")
