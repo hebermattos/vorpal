@@ -86,6 +86,15 @@ def update(*, corpus=None, database=None, import_sources=False, hybrid=None,
 
     imported = {"accepted": 0, "rejected": 0}
     before = _snapshot(dbpath)
+    if dbpath.is_file():
+        with sqlite3.connect(f"file:{dbpath.as_posix()}?mode=ro", uri=True) as current:
+            previous_root = current.execute(
+                "SELECT value FROM metadata WHERE key='root'"
+            ).fetchone()
+        if previous_root and previous_root[0] != str(root):
+            raise KnowledgeError(
+                "Existing RAG index belongs to another corpus; choose a different database."
+            )
     if import_sources:
         destination = root / settings["imported_subdir"]
         if not destination.resolve().is_relative_to(root) or destination.is_symlink():
