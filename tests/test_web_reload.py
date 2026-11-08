@@ -33,6 +33,7 @@ class ReloadTests(unittest.TestCase):
         server = Mock()
         server.app.jobs.lock = threading.RLock()
         server.app.jobs.closed = False
+        server.app.jobs.chat_active = False
         server.app.jobs.active.side_effect = [{'status': 'running'}, None]
         stopped, restart = Mock(), threading.Event()
         stopped.wait.return_value = False
@@ -41,4 +42,30 @@ class ReloadTests(unittest.TestCase):
         self.assertTrue(restart.is_set())
         self.assertTrue(server.app.jobs.closed)
         self.assertEqual(server.app.jobs.active.call_count, 2)
+        server.shutdown.assert_called_once_with()
+
+    def test_restart_waits_for_chat_to_finish(self):
+        server = Mock()
+        server.app.jobs.lock = threading.RLock()
+        server.app.jobs.closed = False
+        server.app.jobs.chat_active = True
+        server.app.jobs.active.return_value = None
+        stopped, restart = Mock(), threading.Event()
+        stopped.wait.return_value = False
+        revisions = iter([['old'], ['new'], ['new']])
+        calls = 0
+
+        def revision(root):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                server.shutdown.assert_not_called()
+                self.assertFalse(server.app.jobs.closed)
+                server.app.jobs.chat_active = False
+            return next(revisions)
+
+        with patch('web.source_revision', side_effect=revision):
+            watch_sources(server, stopped, restart)
+        self.assertTrue(restart.is_set())
+        self.assertTrue(server.app.jobs.closed)
         server.shutdown.assert_called_once_with()
