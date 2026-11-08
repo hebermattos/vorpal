@@ -81,7 +81,20 @@ python src/train.py --profile python --replay --lr 0.0001 --steps 500 --threads 
 
 Training maps binary datasets read-only instead of copying entire files into RAM; corpus preparation still needs memory for document processing. Loss logs describe each current batch. A non-finite training loss stops the run before saving that update, preserving the last saved checkpoint.
 
-Keep `<out>/split_state.json` and `<out>/training_state.json` with each dataset to preserve held-out assignments and consumed-document history.
+Keep `data/shared_split_state.json` with the shared checkpoint, and keep each
+profile's `<out>/split_state.json` and `<out>/training_state.json`. The shared
+registry preserves document assignments across profile changes, replay and reset,
+including when using a custom `--out`. Each profile still has its own binaries
+and consumed-document history. Recognized TFDS test documents stay out of both
+training and validation binaries.
+
+Vorpal checks existing split histories in the configured data directory and
+registered profile outputs. A hash already assigned to training and held out
+stops preparation, and the dataset audit reports the conflict without changing
+files. Back up the histories and review the reported hashes before reconciling
+them. If a checkpoint may have trained on a held-out document, evaluate it on a
+fresh holdout. For old custom outputs outside the data directory, include their
+histories in the review. Vorpal checks them when you select them.
 
 ### Examples by training group
 
@@ -295,9 +308,9 @@ python src/data_quality.py --corpus corpus/security --out data/security --report
 ```
 
 The audit reports exact/trailing-whitespace duplicates, short files, filtered secret-containing
-files, and train/validation history conflicts. Data-quality warnings are distinct from integrity failures. Invalid persisted split state fails closed.
+files, and train/validation history conflicts. Data-quality warnings are distinct from integrity failures. The CLI also checks the shared registry and legacy profile histories for conflicting assignments. Invalid persisted split state fails closed.
 This does **not** detect semantic duplicates or prove dataset licensing, and binary size
-checks are not cryptographic verification. Preserve split history and review audit results
+checks in the audit do not authenticate binary contents. Preserve split history and review audit results
 before incremental/replay training; test datasets must remain excluded from training.
 
 

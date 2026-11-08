@@ -20,7 +20,7 @@ configure_tensorflow_environment()
 import tensorflow as tf
 from tensorflow import keras
 from model import build_model, as_inputs, configure_cpu
-from data import prepare
+from data import default_split_root, prepare, register_prepared_training
 from import_dataset import import_directory
 from evaluate import validation_loss
 
@@ -94,11 +94,6 @@ def prepare_training_corpus(args):
     sources = discover_sources(args.corpus)
     output = Path(args.out)
     state_path = output / "training_state.json"
-    if reset:
-        print("Reset requested: clearing training history and model checkpoints.", flush=True)
-        state_path.unlink(missing_ok=True)
-        CHECKPOINT.unlink(missing_ok=True)
-        METADATA.unlink(missing_ok=True)
     print(f"Importing corpus sources from {args.corpus}", flush=True)
     import_directory(args.corpus, Path(args.corpus) / SETTINGS["runtime"]["imported_subdir"], force=reset)
     print(f"Preparing training data in {args.out}", flush=True)
@@ -126,9 +121,14 @@ def prepare_training_corpus(args):
                 save_training_state(output, used_hashes)
         except (json.JSONDecodeError, OSError):
             pass
-    prepare(args.corpus, output, exclude_hashes=() if replay else used_hashes,
-            external_documents=documents(sources))
-    manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+    manifest = prepare(args.corpus, output, exclude_hashes=() if replay else used_hashes,
+                       external_documents=documents(sources), split_root=getattr(args, "split_root", None))
+    args.corpus_has_training_data = bool(manifest["train_document_hashes"])
+    if reset and (args.corpus_has_training_data or args.data is not None):
+        print("Reset requested: clearing training history and model checkpoints.", flush=True)
+        state_path.unlink(missing_ok=True)
+        CHECKPOINT.unlink(missing_ok=True)
+        METADATA.unlink(missing_ok=True)
     args.training_hashes = manifest.get("train_document_hashes", []) + manifest.get("valid_document_hashes", [])
     if args.data is None:
         args.data = str(output / "train.bin")
@@ -190,10 +190,13 @@ def run(args):
     learning_rate = getattr(args, "lr", SETTINGS["cli"]["lr"])
     if not np.isfinite(learning_rate) or learning_rate <= 0:
         raise ValueError("--lr must be finite and positive")
+    if args.data and (prepared or not hasattr(args, "out")
+                      or Path(args.data).resolve() != (Path(args.out) / "train.bin").resolve()):
+        register_prepared_training(args.data, getattr(args, "split_root", None))
     if hasattr(args, "corpus") and not prepared:
         prepare_training_corpus(args)
-        if not args.training_hashes:
-            print("No new documents to train; all valid corpus documents were already used.", flush=True)
+        if not args.corpus_has_training_data and Path(args.data).resolve() == (Path(args.out) / "train.bin").resolve():
+            print("No eligible training documents remain after applying split and training histories.", flush=True)
             return
     configure_cpu(args.threads)
     config = dict(context=args.context, d_model=args.dim, layers=args.layers,
@@ -330,6 +333,7 @@ def main():
         args.corpus = selected["corpus"]
     if args.out is None:
         args.out = selected["out"]
+    args.split_root = default_split_root()
     run_with_log(args)
 
 if __name__ == "__main__":

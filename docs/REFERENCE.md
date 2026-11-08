@@ -153,6 +153,17 @@ Each run's `--steps` value is the number of additional optimization steps when t
 
 To prepare data without starting training, run `python src/data.py --corpus corpus --out data`. Outputs `data/train.bin` and `data/valid.bin` keep the **same byte format as before**. Training uses byte-level tokenization (256 possible byte values), causal attention, AdamW, and gradient clipping.
 
+CLI preparation and training use `shared_split_state.json` under the configured
+data directory (`config/data.json`, `cli.out`). The registry records SHA-256
+assignments across profiles. Trailing whitespace variants encountered during
+preparation share an assignment. Validation and test are held out from all
+profiles, and test documents are also excluded from validation binaries.
+Preparation reconciles legacy profile split histories (or manifests when the
+history is absent) and reports contradictory hashes. The registry survives
+replay and reset. Standalone Python callers using custom output directories can
+pass the same `split_root` to `prepare()` to share assignments.
+
+
 To ask for security tips in Portuguese, open **Ask / generate**, select
 **Security question (Portuguese)** and click **Generate response**. Example buttons
 fill questions about phishing and passwords. From the terminal:
