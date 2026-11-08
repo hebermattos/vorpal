@@ -1,6 +1,6 @@
 # Vorpal
 
-Vorpal is an educational **local security-analysis** project for interpreting saved Nmap/Nuclei results from an explicitly authorized private-network target. The default analysis path uses a **pretrained local Llama Instruct model (GGUF) through llama.cpp + a local RAG index**. It proposes unverified hypotheses and checks; it does not confirm vulnerabilities or execute suggested commands.
+Vorpal is an educational **local security-analysis** project for interpreting saved Nmap/Nuclei results from an explicitly authorized private-network target. The default setup uses **Ollama + a local RAG index**; llama.cpp is also supported. It proposes unverified hypotheses and checks; it does not confirm vulnerabilities or execute suggested commands.
 
 Vorpal also includes a **separate experimental TensorFlow/Keras Transformer trained from scratch on CPU** (3 blocks, width 96, 4 attention heads, 512-byte context). Its checkpoints, training, evaluation and generation workflows remain available but are **not required** for the Llama + RAG analysis path.
 
@@ -17,6 +17,20 @@ python -m pip install -U pip
 python -m pip install -r requirements.txt
 ```
 
+The default dependencies and `scripts/setup_ollama_rag.sh` do not install
+TensorFlow. For an existing environment dedicated to Ollama + RAG, remove it with:
+
+```bash
+python -m pip uninstall tensorflow tensorflow-cpu
+```
+
+Ollama supplies the analysis model. Hybrid RAG uses its own Sentence Transformers
+embedding model and CPU PyTorch, not TensorFlow. TensorFlow checkpoints are not
+used by this workflow and can be kept as archives. To use the optional Keras
+training/evaluation/generation commands later, install
+`python -m pip install -r requirements-training.txt`. The optional
+`requirements-tfds.txt` includes those training dependencies as well.
+
 ## Default analysis: local Llama + RAG
 
 The normal workflow is **saved scanner output → RAG evidence → local Llama → review-only report**. Llama and the embedding model (if used) are different models. No training or cloud inference is required.
@@ -31,6 +45,32 @@ llama-server \
   --host 127.0.0.1 \
   --port 8080
 ```
+
+Alternatively, install [Ollama](https://ollama.com/download) and start its
+[OpenAI-compatible local server](https://docs.ollama.com/api/openai-compatibility):
+
+```bash
+python src/run_ollama.py
+```
+
+The launcher reads the port from `config/scan_intelligence.json` and binds only
+to `127.0.0.1` (default `8080`), overriding an inherited `OLLAMA_HOST`. Run it
+instead of `llama-server` on that port. Stop it with **Ctrl+C**; server logs are
+shown in the terminal. It does not install Ollama or download models.
+
+In a second terminal, use the same endpoint to list installed models:
+
+```bash
+OLLAMA_HOST=127.0.0.1:8080 ollama list
+```
+
+Set `model` in `config/scan_intelligence.json` to an installed local Instruct
+model's exact name, or copy that model to the default alias with
+`OLLAMA_HOST=127.0.0.1:8080 ollama cp YOUR_INSTALLED_MODEL local` (replace
+`YOUR_INSTALLED_MODEL` with its name). If no model is installed, explicitly
+download your chosen model with `ollama pull` using the same `OLLAMA_HOST`.
+Use the configured port in these commands if you change it. An Ollama service
+already listening on its usual port `11434` is a separate endpoint.
 
 3. From the repository root, update RAG using your **reviewed local documentation**. This indexes the *entire* `corpus/` tree into the configured default database, without importing URLs:
 
@@ -55,6 +95,42 @@ The server endpoint is fixed to `127.0.0.1`; proxies and redirects are disabled.
 **Troubleshooting:** If the server is unavailable, confirm `llama-server` is running on port 8080 and the configured model alias is `local`. If RAG is missing or empty, review the documents under `corpus/` and re-run `python vorpal.py knowledge update`. If the model returns invalid JSON, the analysis rejects it; use a compatible Instruct model and review its output. Do not treat model text or retrieved documents as trusted instructions.
 
 ## Knowledge updates (no model training)
+
+For Linux/WSL, the complete setup script creates/reuses `.venv`, installs the
+project requirements, installs Ollama if missing using its
+[official installer](https://docs.ollama.com/linux), starts/reuses the configured
+loopback server, prepares the local model, and indexes the corpus:
+
+```bash
+bash scripts/setup_ollama_rag.sh --import-sources
+```
+
+This downloads packages and model weights; the Ollama installation may request
+sudo. `--import-sources` also processes the corpus PDF/URL/scraping inputs through
+the existing importer. Omit it to index only existing local text. No training or
+scanning is started. Defaults are in `config/setup_ollama_rag.json` (local Ollama
+model, embedding model ID and startup timeout); the endpoint and analysis model
+alias come from `config/scan_intelligence.json`. Existing models and aliases are
+reused. Setup logs and server logs are saved under `logs/setup/`; knowledge audit
+reports remain under `logs/knowledge/`. A server started by setup stays running
+on success; the script prints its PID and stop command. A server it started is
+stopped if setup fails. Other server instances are left running.
+
+To include hybrid retrieval dependencies and install the
+[multilingual embedding model](https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2):
+
+```bash
+bash scripts/setup_ollama_rag.sh --hybrid --import-sources
+```
+
+Hybrid setup downloads CPU PyTorch, Sentence Transformers and embedding weights
+into the configured `embedding_model` directory. Existing embedding directories
+are validated locally and preserved. A text-only index cannot be converted in
+place: choose a new index using `--database data/rag/hybrid.sqlite3`, then pass
+that path with `--rag-db` during analysis. To make it the default, set `database`
+consistently in `config/knowledge.json` and `config/rag.json`. Setup preserves
+the existing index when a mode conflict is reported. Do not run setup/indexing
+concurrently with another indexing process.
 
 The Knowledge Manager updates the **existing local RAG corpus** and writes an
 incremental JSON audit report. It does not change TensorFlow checkpoints,
