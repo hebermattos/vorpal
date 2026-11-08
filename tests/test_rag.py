@@ -82,6 +82,15 @@ class RagTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "mode/model changed"):
             rag.index(self.root, self.db, settings=self.settings, hybrid=False)
 
+    def test_portable_bm25_fallback(self):
+        rag.index(self.root, self.db, settings=self.settings)
+        with sqlite3.connect(self.db) as db:
+            ranked = rag._fallback_bm25(db, ["nmap", "TCP"], 8)
+        self.assertTrue(ranked)
+        with patch.object(rag, "_has_fts5", return_value=False):
+            found = rag.search("nmap TCP", self.db, settings=self.settings)
+        self.assertEqual(found[0]["source"], "nmap.txt")
+
     def test_config_validation(self):
         config = dict(rag.SETTINGS, chunk_overlap=1000)
         with self.assertRaises(ConfigError):
