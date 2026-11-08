@@ -1,4 +1,4 @@
-"""Offline scan interpretation with local llama.cpp, optional RAG and strict review.
+"""Offline scan interpretation with local llama.cpp + required RAG and strict review.
 
 This module NEVER invokes a scanner or executes suggested commands. Model text
 is treated as untrusted proposals and checked against the security-tool policy.
@@ -152,7 +152,8 @@ def _validate_proposal(data, target, references, settings):
         note = item.get("description")
         ids = item.get("sources")
         if (not isinstance(note, str) or not 1 <= len(note) <= settings["max_note_chars"]
-                or not isinstance(ids, list) or any(not isinstance(i, int) or i not in supported for i in ids)):
+                or not note.isprintable() or not isinstance(ids, list) or not ids
+                or any(type(i) is not int or i not in supported for i in ids)):
             raise AnalysisError("Invalid hypothesis text or source references.")
         cleaned.append({"description": note, "sources": sorted(set(ids)),
                         "status": "unverified_hypothesis", "confirmed": False})
@@ -161,7 +162,7 @@ def _validate_proposal(data, target, references, settings):
         if not isinstance(item, dict):
             raise AnalysisError("Invalid verification proposal.")
         tool, args, reason = item.get("tool"), item.get("args"), item.get("reason")
-        if tool not in ("nmap", "nuclei") or not isinstance(reason, str) or not 1 <= len(reason) <= settings["max_note_chars"]:
+        if tool not in ("nmap", "nuclei") or not isinstance(reason, str) or not 1 <= len(reason) <= settings["max_note_chars"] or not reason.isprintable():
             raise AnalysisError("Unsupported verification proposal.")
         security_tools.validate_target(tool, target if tool == "nmap" else f"http://{target}")
         normalized = security_tools.validate_arguments(tool, args)
@@ -185,13 +186,17 @@ def analyze(target, *, nmap_xml=None, nuclei_jsonl=None, database=None, authoriz
     observed = {"target": target, "open_tcp": ports, "nuclei": nuclei}
     terms = " ".join(f'{p["service"]} {p["product"]} {p["version"]}' for p in ports)
     query = (terms + " " + " ".join(n["template_id"] for n in nuclei)).strip()
-    docs = []
     path = Path(database or load_config("rag")["database"])
-    if query and path.is_file():
-        docs = rag.search(query[:settings["max_query_chars"]], path,
-                          limit=settings["rag_results"])
-    sources = [{"id": idx, "source": doc["source"], "line": doc["line"],
-                "sha256": doc["sha256"]} for idx, doc in enumerate(docs, 1)]
+    if not path.is_file():
+        raise AnalysisError("RAG index is required. Run: python vorpal.py knowledge update")
+    if not query:
+        raise AnalysisError("No service or finding evidence to query the RAG index.")
+    docs = rag.search(query[:settings["max_query_chars"]], path,
+                      limit=settings["rag_results"])
+    if not docs:
+        raise AnalysisError("RAG returned no relevant documents. Review and update the corpus before analysis.")
+    sources = [{"id": idx, "type": "document", "source": doc["source"],
+                "line": doc["line"], "sha256": doc["sha256"]} for idx, doc in enumerate(docs, 1)]
     context = [{"id": source["id"], "text": doc["text"][:settings["max_excerpt_chars"]]}
                for source, doc in zip(sources, docs)]
     system = settings["system_prompt"]
@@ -206,7 +211,8 @@ def analyze(target, *, nmap_xml=None, nuclei_jsonl=None, database=None, authoriz
     except ValueError as exc:
         raise AnalysisError("The LLM returned invalid JSON.") from exc
     hypotheses, proposals = _validate_proposal(response, target, sources, settings)
-    report = {"target": target, "observations": observed, "sources": sources,
+    report = {"target": target, "backend": "llama_cpp", "rag_required": True,
+              "observations": observed, "sources": sources,
               "hypotheses": hypotheses, "next_checks": proposals,
               "generated_at": datetime.now(timezone.utc).isoformat(),
               "status": "review_required", "automatic_execution": False,
