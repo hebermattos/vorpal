@@ -1,7 +1,6 @@
 """Incremental corpus import and RAG lifecycle management.
 
-Does not train a model, run a scanner, or modify existing dataset/checkpoint
-histories. External imports occur only when explicitly requested.
+Does not run a scanner or modify local chat model weights. External imports occur only when explicitly requested.
 """
 from __future__ import annotations
 
@@ -126,7 +125,6 @@ def update(*, corpus=None, database=None, import_sources=False, hybrid=None,
         "import": imported,
         "changes": {"added": added, "updated": changed, "removed": removed},
         "index": verification,
-        "training_started": False,
         "scan_started": False,
     }
     logs.mkdir(parents=True, exist_ok=True)

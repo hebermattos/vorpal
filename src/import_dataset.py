@@ -19,7 +19,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 from content_safety import SECRET_CONTENT
-from data import is_internal_file
+from corpus_policy import is_internal_file
 
 try:
     from .config import load_config
@@ -269,7 +269,7 @@ def import_one(name, raw, provenance, out):
     for entry_name, blob in entries:
         try:
             if is_internal_file(PurePosixPath(entry_name).name):
-                raise ExtractError('internal project metadata is not training content')
+                raise ExtractError('internal project metadata is not corpus content')
             safe_name(entry_name)
             content = extract_text(entry_name, blob)
             digest = hashlib.sha256(content.encode('utf-8')).hexdigest()

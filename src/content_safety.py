@@ -1,4 +1,4 @@
-"""Shared content filters used by import and dataset preparation."""
+"""Shared content filters used by corpus import and retrieval."""
 
 import re
 

@@ -20,9 +20,6 @@ def main():
             sys.path.insert(0, source)
         from knowledge import main as knowledge_main
         return knowledge_main(sys.argv[2:])
-    if len(sys.argv) >= 2 and sys.argv[1] == 'legacy-scan':
-        from src.local_vuln_scan import main as scan_main
-        return scan_main(sys.argv[2:])
     if len(sys.argv) >= 2 and not sys.argv[1].startswith('-'):
         source = str(Path(__file__).resolve().parent / 'src')
         if source not in sys.path:
@@ -30,8 +27,8 @@ def main():
         from assistant import main as assistant_main
         return assistant_main(['analyze', '--target', *sys.argv[1:]])
     parser = argparse.ArgumentParser(description='Vorpal: local Ollama + RAG security assistant')
-    parser.add_argument('command', choices=['analyze', 'chat', 'knowledge', 'legacy-scan'], nargs='?',
-                        help='Use COMMAND --help for options. Legacy Keras scanning is optional.')
+    parser.add_argument('command', choices=['analyze', 'chat', 'knowledge'], nargs='?',
+                        help='Use COMMAND --help for options.')
     parser.parse_args()
     parser.print_help()
     return 0

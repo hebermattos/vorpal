@@ -1,4 +1,4 @@
-"""Offline fixtures for standalone local retrieval; no downloads or TensorFlow."""
+"""Offline fixtures for standalone local retrieval; no downloads or model server."""
 import json
 from pathlib import Path
 import sqlite3
@@ -58,7 +58,7 @@ class RagTests(unittest.TestCase):
 
     def test_unsafe_and_internal_are_not_indexed(self):
         (self.root / "credentials.txt").write_text("This file should never be used for indexing!\n")
-        (self.root / "manifest.json").write_text(json.dumps({"train_documents": ["secret"]}))
+        (self.root / "manifest.json").write_text(json.dumps({"metadata": "not a source document"}))
         (self.root / ".env").write_text("ADMIN_PASSWORD=this_is_not_safe_to_index\n")
         (self.root / "link.txt").symlink_to(self.root / "nmap.txt")
         result = rag.index(self.root, self.db, settings=self.settings)

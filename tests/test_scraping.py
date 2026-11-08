@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from config import load_config
 import scraping
 import import_dataset
-from data import prepare
+from rag import index
 
 TEXT = 'Reviewed documentation about validating inputs, testing limits and handling errors safely. '
 
@@ -140,9 +140,12 @@ class ScrapingTests(unittest.TestCase):
             import_dataset.import_directory(root, out, force=True)
             self.assertIn('https://example.org/guide', self.fetches)
             self.assertNotIn('scraping', [item['member'] for item in first])
-            prepare(root, Path(directory) / 'data')
-            manifest = json.loads((Path(directory) / 'data/manifest.json').read_text())
-            self.assertFalse(any('scraping_state' in name for name in manifest['train_documents'] + manifest['valid_documents']))
+            database = Path(directory) / 'index.sqlite3'
+            index(root, database)
+            import sqlite3
+            with sqlite3.connect(database) as db:
+                sources = [row[0] for row in db.execute('SELECT source FROM documents')]
+            self.assertFalse(any('scraping_state' in name for name in sources))
 
     def test_persisted_links_are_revalidated_and_failed_pages_retry(self):
         cache = {'https://example.org/': {'links': ['https://other.org/', 'http://127.0.0.1/', 'https://example.org/guide']}}

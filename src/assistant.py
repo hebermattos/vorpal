@@ -12,10 +12,10 @@ import threading
 
 try:
     from .config import load_config
-    from . import rag, scan_intelligence, security_tools
+    from . import collectors, rag, scan_intelligence, security_tools
 except ImportError:
     from config import load_config
-    import rag, scan_intelligence, security_tools
+    import collectors, rag, scan_intelligence, security_tools
 
 ROOT = Path(__file__).resolve().parents[1]
 CHAT_LOCK = threading.Lock()
@@ -37,14 +37,18 @@ def log_directory(root=ROOT):
 
 
 def read_record(path):
-    return json.loads(scan_intelligence._read(path, load_config('assistant')['max_session_bytes']))
+    settings = load_config('assistant')
+    limit = settings['max_report_bytes'] if path.name.startswith('analysis_') else settings['max_session_bytes']
+    return json.loads(scan_intelligence._read(path, limit))
 
 
 def save_record(path, value):
     if path.is_symlink():
         raise ValueError('Assistant log must not be a symbolic link.')
     payload = json.dumps(value, ensure_ascii=False, indent=2)
-    if len(payload.encode('utf-8')) > load_config('assistant')['max_session_bytes']:
+    settings = load_config('assistant')
+    limit = settings['max_report_bytes'] if 'observations' in value and 'report_id' in value else settings['max_session_bytes']
+    if len(payload.encode('utf-8')) > limit:
         raise ValueError('Assistant record exceeds the configured size limit.')
     temporary = path.with_name(path.name + '.' + secrets.token_hex(6) + '.tmp')
     temporary.write_text(payload, encoding='utf-8')
@@ -65,9 +69,12 @@ def answer(message, history=(), *, database=None, observations=None, client=None
     path = preflight(database)
     model_settings = dict(load_config('scan_intelligence'))
     # Include bounded conversational context for follow-up questions.
-    query = message
+    evidence_terms = []
     if observations:
-        query += ' ' + ' '.join(str(item.get('service_hint', '')) for item in observations.get('open_tcp', []))
+        for item in observations.get('open_tcp', []):
+            evidence_terms.extend(str(item.get(key, '')) for key in ('port', 'service_hint', 'product', 'version'))
+    evidence_query = ' '.join(evidence_terms)[:model_settings['max_query_chars'] // 2]
+    query = evidence_query + ' ' + message
     query += ' ' + ' '.join(turn['user'] for turn in history[-2:])
     docs = rag.search(query[:model_settings['max_query_chars']], path, limit=model_settings['rag_results'])
     if not docs:
@@ -133,7 +140,7 @@ def chat(message, *, session_id=None, report_id=None, database=None, root=ROOT, 
 
 
 def ports_from_text(raw=None):
-    ports = load_config('local_vuln_scan')['policy']['default_ports'] if raw is None else raw
+    ports = load_config('assistant')['default_ports'] if raw is None else raw
     if isinstance(ports, str):
         try:
             ports = [int(item.strip()) for item in ports.split(',')]
@@ -146,12 +153,59 @@ def ports_from_text(raw=None):
     return sorted(set(ports))
 
 
-def analyze_ip(target, *, authorized=False, ports=None, database=None, root=ROOT, client=None):
+def analyze_ports(report, report_path, *, database, settings, client=None):
+    """Assess each open port independently; keep local citation IDs scoped to that port."""
+    observations = report['observations']
+    opened = {item['port']: item for item in observations['open_tcp']}
+    report['port_analyses'] = []
+    report['sources'] = []
+    report['status'] = 'analyzing'
+    for port in observations['selected_ports']:
+        evidence = opened.get(port)
+        if evidence is None:
+            status = 'closed_or_unreachable' if report['tool'] == 'tcp' else 'not_reported_open'
+            report['port_analyses'].append({
+                'port': port, 'protocol': 'tcp', 'status': status, 'sources': [],
+                'answer': 'Not observed open by this collection. No model assessment was performed; this does not establish safety.'})
+        else:
+            report['port_analyses'].append({'port': port, 'protocol': 'tcp', 'evidence': evidence,
+                                            'status': 'pending', 'sources': []})
+    save_record(report_path, report)
+    for entry in report['port_analyses']:
+        if entry['status'] != 'pending':
+            continue
+        entry['status'] = 'analyzing'
+        save_record(report_path, report)
+        context = {'target': observations['target'], 'selected_ports': [entry['port']],
+                   'open_tcp': [entry['evidence']]}
+        try:
+            result = answer(settings['analysis_question'], database=database,
+                            observations=context, client=client)
+            entry.update(result, status='review_required')
+            report['sources'].extend(dict(source, port=entry['port']) for source in result['sources'])
+        except (ValueError, OSError, RuntimeError) as exc:
+            entry.update(status='failed', error=str(exc),
+                         answer='This port could not be assessed. See its error; other port results are retained.')
+        save_record(report_path, report)
+    completed = sum(entry['status'] == 'review_required' for entry in report['port_analyses'])
+    failed = [entry for entry in report['port_analyses'] if entry['status'] == 'failed']
+    report['answer'] = (f'{completed} of {len(opened)} observed open TCP ports assessed independently. '
+                        'See port_analyses for evidence, advice and port-scoped sources. Findings remain unverified.')
+    report.update(backend='local_openai_compatible', model=load_config('scan_intelligence')['model'],
+                  rag_required=True, status='partial' if failed else 'review_required' if opened else 'no_open_ports')
+    if failed and completed == 0:
+        raise ValueError(f"No open port could be assessed: {failed[0]['error']}")
+
+
+def analyze_ip(target, *, authorized=False, ports=None, tool=None, database=None, root=ROOT, client=None):
     if authorized is not True:
         raise ValueError('Explicit authorization is required before connecting to a target.')
     target = security_tools.validate_target('nmap', target)
     selected = ports_from_text(ports)
     settings = load_config('assistant')
+    tool = tool if tool is not None else settings['default_tool']
+    if tool not in {'tcp', 'nmap'}:
+        raise ValueError('Unsupported evidence tool. Select tcp or nmap.')
     path = preflight(database)
     # Verify retrieval before making any target connection.
     if not rag.search(settings['fallback_query'], path, limit=1):
@@ -159,12 +213,24 @@ def analyze_ip(target, *, authorized=False, ports=None, database=None, root=ROOT
     report_id = secrets.token_hex(12)
     report_path = log_directory(root) / f'analysis_{report_id}.json'
     observations = {'target': target, 'selected_ports': selected, 'open_tcp': [], 'unreachable_or_closed': []}
-    report = {'report_id': report_id, 'observations': observations, 'authorized': True,
+    report = {'report_id': report_id, 'tool': tool, 'observations': observations, 'authorized': True,
               'status': 'collecting', 'automatic_execution': False,
               'started_at': datetime.now(timezone.utc).isoformat()}
     save_record(report_path, report)
     try:
-        for port in selected:
+        if tool == 'nmap':
+            argv = security_tools.build_command('nmap', target, [*settings['nmap_args'], '-p', ','.join(map(str, selected))])
+            xml_path = report_path.with_suffix('.nmap.xml')
+            stderr_path = report_path.with_suffix('.nmap.stderr.log')
+            report.update(collector_argv=argv, evidence_files={'nmap_xml': str(xml_path), 'stderr': str(stderr_path)})
+            save_record(report_path, report)
+            collectors.run(argv, xml_path, stderr_path, timeout=settings['nmap_timeout_seconds'],
+                           max_bytes=settings['nmap_max_output_bytes'], cwd=root)
+            raw = xml_path.read_bytes()
+            found = scan_intelligence.parse_nmap(raw, target)
+            observations['open_tcp'] = [dict(item, service_hint=item['service'], status='tool_reported_open') for item in found if item['port'] in selected]
+            observations.pop('unreachable_or_closed')
+        for port in selected if tool == 'tcp' else ():
             try:
                 with socket.create_connection((target, port), timeout=settings['connect_timeout_seconds']) as connection:
                     try:
@@ -179,13 +245,12 @@ def analyze_ip(target, *, authorized=False, ports=None, database=None, root=ROOT
                                                  'banner': banner, 'status': 'observed_open'})
             except OSError:
                 observations['unreachable_or_closed'].append(port)
-        report['status'] = 'analyzing'
-        save_record(report_path, report)
-        question = settings['analysis_question']
-        result = answer(question, database=path, observations=observations, client=client)
-        report.update(result, status='review_required')
+        analyze_ports(report, report_path, database=path, settings=settings, client=client)
     except Exception as exc:
         report.update(status='failed', error=str(exc))
+        raise
+    except KeyboardInterrupt:
+        report.update(status='cancelled', error='Collection or inference interrupted.')
         raise
     finally:
         report['finished_at'] = datetime.now(timezone.utc).isoformat()
@@ -200,6 +265,7 @@ def main(argv=None):
     scan.add_argument('--target', required=True)
     scan.add_argument('--authorized', action='store_true')
     scan.add_argument('--ports')
+    scan.add_argument('--tool', choices=('tcp', 'nmap'), help='Evidence collector; default from config/assistant.json')
     scan.add_argument('--rag-db')
     scan.add_argument('--output', help='Optional additional JSON report destination')
     conversation = commands.add_parser('chat', help='Security advice with cited local RAG sources')
@@ -213,7 +279,7 @@ def main(argv=None):
             destination = Path(args.output) if args.output else None
             if destination and destination.is_symlink():
                 raise ValueError('Output must not be a symbolic link.')
-            result = analyze_ip(args.target, authorized=args.authorized, ports=args.ports, database=args.rag_db)
+            result = analyze_ip(args.target, authorized=args.authorized, ports=args.ports, tool=args.tool, database=args.rag_db)
             if destination:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 save_record(destination, result)
@@ -231,8 +297,11 @@ def main(argv=None):
                     break
     except (ValueError, OSError, RuntimeError) as exc:
         parser.exit(2, f'Assistant error: {exc}\n')
-    except (EOFError, KeyboardInterrupt):
+    except EOFError:
         print('\nConversation ended.')
+    except KeyboardInterrupt:
+        print('\nRequest interrupted.')
+        return 130
     return 0
 
 

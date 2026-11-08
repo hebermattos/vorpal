@@ -2,11 +2,9 @@
 from __future__ import annotations
 
 import argparse
-from collections import deque
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
-import math
 import os
 from pathlib import Path
 import re
@@ -19,10 +17,10 @@ from urllib.parse import parse_qs, quote, urlsplit
 
 try:
     from .config import ConfigError, load_config, validate_config
-    from .security_tools import latest_plan, read_plan, reviewed_command, tool_status, validate_target as validate_tool_target
+    from .security_tools import read_plan, reviewed_command, validate_target as validate_tool_target
 except ImportError:
     from config import ConfigError, load_config, validate_config
-    from security_tools import latest_plan, read_plan, reviewed_command, tool_status, validate_target as validate_tool_target
+    from security_tools import read_plan, reviewed_command, validate_target as validate_tool_target
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -234,48 +232,25 @@ class Application:
             load_config.cache_clear()
         return {"saved": True, "restart_required": name == "web"}
 
-    def profile(self, identifier):
-        identifier = self.settings["profile_aliases"].get(identifier, identifier)
-        profiles = self.settings["profiles"]
-        profile = next((profile for profile in profiles if profile["id"] == identifier), None)
-        if profile is None:
-            raise ValueError("Select a valid corpus profile.")
-        self.path(profile["corpus"])
-        self.path(profile["out"])
-        return profile
-
-    def checkpoints(self):
-        train = self.configuration("train")
-        latest = self.path(train["policy"]["checkpoint"])
-        return {"latest": latest, "best": latest.with_name(train["runtime"]["best_checkpoint_name"])}
-
-    def _number(self, params, key, default, maximum, *, minimum=1, integer=True):
-        value = params.get(key, default)
-        if (isinstance(value, bool) or (type(value) is not int if integer else type(value) not in (int, float))
-                or not math.isfinite(value) or not minimum <= value <= maximum):
-            raise ValueError(f"{key}: enter an {'integer' if integer else 'number'} between {minimum} and {maximum}.")
-        return value
-
     def command(self, action, params):
         allowed = {
-            "generate": {"prompt", "mode", "max_new", "temperature", "threads", "checkpoint"},
-            "train": {"steps", "batch", "threads", "profile", "mode"},
-            "evaluate": {"samples", "threads", "checkpoint", "profile"},
-            "benchmark": {"threads", "checkpoint"},
-            "prepare": {"profile"}, "import": {"profile"},
-            "tool_plan": {"tool", "target", "goal", "threads", "checkpoint"},
-            "tool_run": {"plan_id", "digest", "authorized"},
-            "analyze_ip": {"target", "authorized", "ports"},
-            "knowledge_update": {"import_sources"},
+            'analyze_ip': {'target', 'authorized', 'ports', 'tool'},
+            'knowledge_update': {'import_sources'},
+            'tool_plan': {'tool', 'target', 'goal'},
+            'tool_run': {'plan_id', 'digest', 'authorized'},
         }
         if action not in allowed or not isinstance(params, dict) or params.keys() - allowed[action]:
-            raise ValueError("Invalid action or parameters.")
+            raise ValueError('Invalid action or parameters.')
         if action == 'analyze_ip':
             if params.get('authorized') is not True:
                 raise ValueError('Explicit authorization is required for this target.')
             target = validate_tool_target('nmap', params.get('target'))
             command = [sys.executable, '-u', str(self.root / 'src/assistant.py'),
                        'analyze', '--target', target, '--authorized']
+            if 'tool' in params:
+                if params['tool'] not in {'tcp', 'nmap'}:
+                    raise ValueError('Select tcp or nmap.')
+                command += ['--tool', params['tool']]
             if params.get('ports'):
                 try:
                     from .assistant import ports_from_text
@@ -288,72 +263,20 @@ class Application:
                 raise ValueError('import_sources must be a boolean.')
             return [sys.executable, '-u', str(self.root / 'vorpal.py'), 'knowledge', 'update'] + (
                 ['--import-sources'] if params.get('import_sources') else [])
-        if action in {"tool_plan", "tool_run"}:
-            settings = self.configuration("security_tools")
-            command = [sys.executable, "-u", str(self.root / "src/security_tools.py")]
-            if action == "tool_run":
-                plan = read_plan(params.get("plan_id"), settings=settings, root=self.root)
-                reviewed_command(plan, params.get("digest"), authorized=params.get("authorized"), settings=settings, root=self.root)
-                return command + ["run", "--plan-id", params["plan_id"], "--digest", params["digest"], "--authorized"]
-            tool = params.get("tool")
-            if tool not in settings["tools"]:
-                raise ValueError("Select Nmap or Nuclei.")
-            target = validate_tool_target(tool, params.get("target"))
-            goal = params.get("goal")
-            if not isinstance(goal, str) or not goal.strip() or not goal.isprintable() or len(goal) > settings["runtime"]["max_goal_chars"]:
-                raise ValueError("Enter a short, single-line goal.")
-            checkpoint = self.checkpoints().get(params.get("checkpoint", "latest"))
-            if checkpoint is None or not checkpoint.is_file():
-                raise ValueError("A trained checkpoint is required to plan commands.")
-            threads = self._number(params, "threads", settings["cli"]["threads"], self.settings["limits"]["threads"])
-            return command + ["plan", "--tool", tool, "--target", target, "--goal", goal,
-                              "--checkpoint", str(checkpoint), "--threads", str(threads)]
-        section = {"generate": "generate", "train": "train", "evaluate": "evaluate", "benchmark": "benchmark",
-                   "prepare": "data", "import": "import_dataset"}[action]
-        defaults = self.configuration(section)["cli"]
-        limits = self.settings["limits"]
-        command = [sys.executable, "-u", str(self.root / "src" / f"{section}.py")]
-        if action in {"generate", "train", "evaluate", "benchmark"}:
-            command += ["--threads", str(self._number(params, "threads", defaults["threads"], limits["threads"]))]
-        if action in {"generate", "evaluate", "benchmark"}:
-            checkpoint = self.checkpoints().get(params.get("checkpoint", "latest"))
-            if checkpoint is None or not checkpoint.is_file():
-                raise ValueError("Checkpoint not found. Train the model or select an available checkpoint.")
-            command += ["--checkpoint", str(checkpoint)]
-        if action == "generate":
-            prompt = params.get("prompt", defaults["prompt"])
-            if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > limits["prompt_chars"]:
-                raise ValueError(f"Enter a prompt with at most {limits['prompt_chars']} characters.")
-            mode = params.get("mode", "continuation")
-            if mode not in ("continuation", "security"):
-                raise ValueError("Invalid generation mode.")
-            command += ["--question" if mode == "security" else "--prompt", prompt, "--max-new", str(self._number(params, "max_new", defaults["max_new"], limits["max_new"])),
-                        "--temperature", str(self._number(params, "temperature", defaults["temperature"], 2, minimum=0.01, integer=False))]
-        if action in {"train", "evaluate", "prepare", "import"}:
-            profile = self.profile(params.get("profile", self.settings["profiles"][0]["id"]))
-        if action == "train":
-            mode = params.get("mode", "new")
-            if mode not in {"new", "replay"}:
-                raise ValueError("Invalid training mode.")
-            if mode == "replay":
-                train = self.configuration("train")
-                if not self.checkpoints()["latest"].is_file() or not self.path(train["policy"]["metadata"]).is_file():
-                    raise ValueError("Replaying the corpus requires an existing checkpoint and metadata.")
-                command += ["--replay"]
-            command += ["--steps", str(self._number(params, "steps", defaults["steps"], limits["steps"])),
-                        "--batch", str(self._number(params, "batch", defaults["batch"], limits["batch"])),
-                        "--corpus", profile["corpus"], "--out", profile["out"]]
-        if action == "evaluate":
-            command += ["--samples", str(self._number(params, "samples", defaults["samples"], limits["samples"])),
-                        "--data", str(self.path(profile["out"]) / "valid.bin")]
-        if action == "prepare":
-            command += ["--corpus", profile["corpus"], "--out", profile["out"]]
-        if action == "import":
-            directory = self.path(profile["corpus"]) / self.configuration("train")["runtime"]["imported_subdir"]
-            command += ["--directory", profile["corpus"], "--out", str(directory)]
-        if action == "benchmark":
-            self.path(defaults["output"])
-        return command
+        settings = self.configuration('security_tools')
+        command = [sys.executable, '-u', str(self.root / 'src/security_tools.py')]
+        if action == 'tool_run':
+            plan = read_plan(params.get('plan_id'), settings=settings, root=self.root)
+            reviewed_command(plan, params.get('digest'), authorized=params.get('authorized'), settings=settings, root=self.root)
+            return command + ['run', '--plan-id', params['plan_id'], '--digest', params['digest'], '--authorized']
+        tool = params.get('tool')
+        if tool not in settings['tools']:
+            raise ValueError('Select Nmap or Nuclei.')
+        target = validate_tool_target(tool, params.get('target'))
+        goal = params.get('goal')
+        if not isinstance(goal, str) or not goal.strip() or not goal.isprintable() or len(goal) > settings['runtime']['max_goal_chars']:
+            raise ValueError('Enter a short, single-line goal.')
+        return command + ['plan', '--tool', tool, '--target', target, '--goal', goal]
 
     def start(self, action, params):
         with self.lock:
@@ -378,53 +301,11 @@ class Application:
                 self.jobs.chat_active = False
 
     def state(self):
-        train = self.configuration("train")
-        checkpoint_paths = self.checkpoints()
-        metadata = read_json(self.path(train["policy"]["metadata"]))
-        best = read_json(checkpoint_paths["latest"].with_name(train["runtime"]["best_metadata_name"]))
-        profiles = []
-        for profile in self.settings["profiles"]:
-            profile = {**profile, "manifest": read_json(self.path(profile["out"]) / "manifest.json")}
-            profiles.append(profile)
-        corpus = self.path(self.settings["profiles"][0]["corpus"])
-        pdfs = []
-        if corpus.is_dir():
-            for path in sorted(corpus.rglob("*.pdf")):
-                if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(self.root):
-                    pdfs.append({"name": path.name, "path": str(path.relative_to(self.root)), "bytes": path.stat().st_size})
-        metrics_path = checkpoint_paths["latest"].with_name(train["runtime"]["metrics_name"])
-        metrics = []
-        if metrics_path.is_file():
-            with metrics_path.open(encoding="utf-8") as stream:
-                for line in deque(stream, maxlen=self.settings["runtime"]["metrics_limit"]):
-                    try:
-                        item = json.loads(line)
-                        if isinstance(item, dict) and all(isinstance(item.get(key), (int, float)) and math.isfinite(item[key]) for key in ("step", "train_loss", "validation_loss")):
-                            metrics.append(item)
-                    except ValueError:
-                        continue
-        benchmark = read_json(self.path(self.configuration("benchmark")["cli"]["output"]))
-        evaluation = None
-        with self.jobs.lock:
-            for job in reversed(self.jobs.jobs):
-                if job["action"] == "evaluate" and job["status"] == "completed":
-                    match = re.search(r"Validation loss=([\d.eE+-]+); byte-level perplexity=([\d.eE+-]+)", job["output"])
-                    if match:
-                        loss, perplexity = map(float, match.groups())
-                        if math.isfinite(loss) and math.isfinite(perplexity):
-                            command = job["command"]
-                            evaluation = {"loss": loss, "perplexity": perplexity, "finished_at": job["finished_at"],
-                                          "dataset": command[command.index("--data") + 1] if "--data" in command else "",
-                                          "samples": command[command.index("--samples") + 1] if "--samples" in command else None}
-                            break
-        tool_settings = self.configuration("security_tools")
-        return {"token": self.token, "poll_ms": self.settings["runtime"]["poll_ms"], "metadata": metadata,
-                "best": best, "checkpoints": [{"id": name, "exists": path.is_file(), "path": str(path.relative_to(self.root))} for name, path in checkpoint_paths.items()],
-                "profiles": profiles, "pdfs": pdfs[:self.settings["runtime"]["file_limit"]], "pdf_count": len(pdfs),
-                "metrics": metrics, "benchmark": benchmark, "evaluation": evaluation, "jobs": self.jobs.snapshot(),
-                "tools": tool_status(tool_settings), "tool_plan": latest_plan(settings=tool_settings, root=self.root),
-                "defaults": {name: self.configuration(name)["cli"] for name in ("generate", "train", "evaluate", "benchmark", "security_tools")},
-                "limits": self.settings["limits"], "configurations": sorted(path.stem for path in (self.root / "config").glob("*.json") if path.stem != "schema")}
+        inference = self.configuration('scan_intelligence')
+        return {'token': self.token, 'poll_ms': self.settings['runtime']['poll_ms'],
+                'inference': {key: inference[key] for key in ('host', 'port', 'model')},
+                'jobs': self.jobs.snapshot(),
+                'configurations': sorted(path.stem for path in (self.root / 'config').glob('*.json') if path.stem != 'schema')}
 
 
 class Server(ThreadingHTTPServer):
@@ -521,7 +402,7 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/files":
                 raw = parse_qs(url.query).get("path", [""])[0]
                 pdf = app.path(raw)
-                corpus = app.path(app.settings["profiles"][0]["corpus"])
+                corpus = app.path(app.configuration("knowledge")["corpus"])
                 if not pdf.is_relative_to(corpus) or pdf.suffix.lower() != ".pdf" or not pdf.is_file():
                     raise FileNotFoundError("PDF not found.")
                 self._send(200, pdf.read_bytes(), "application/pdf", {"Content-Disposition": f"inline; filename*=UTF-8''{quote(pdf.name)}"})

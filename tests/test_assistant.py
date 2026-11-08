@@ -70,13 +70,25 @@ class AssistantTests(unittest.TestCase):
         self.assertEqual(self.responses[-1]['observations']['target'], '127.0.0.1')
 
     def test_analysis_failure_preserves_collected_evidence(self):
-        with patch.object(assistant.socket, 'create_connection', side_effect=TimeoutError), \
+        connection = MagicMock()
+        connection.__enter__.return_value.recv.return_value = b'SSH fixture'
+        with patch.object(assistant.socket, 'create_connection', return_value=connection), \
                 self.assertRaisesRegex(ValueError, 'offline'):
             assistant.analyze_ip('127.0.0.1', authorized=True, ports='22', database=self.db,
                                  root=self.root, client=MagicMock(side_effect=ValueError('offline')))
         record = json.loads(next((self.root / 'logs/assistant').glob('analysis_*.json')).read_text())
         self.assertEqual(record['status'], 'failed')
-        self.assertEqual(record['observations']['unreachable_or_closed'], [22])
+        self.assertEqual(record['observations']['open_tcp'][0]['port'], 22)
+        self.assertEqual(record['port_analyses'][0]['status'], 'failed')
+
+    def test_no_open_ports_do_not_request_model_advice(self):
+        model = MagicMock()
+        with patch.object(assistant.socket, 'create_connection', side_effect=TimeoutError):
+            report = assistant.analyze_ip('127.0.0.1', authorized=True, ports='22', database=self.db,
+                                          root=self.root, client=model)
+        model.assert_not_called()
+        self.assertEqual(report['status'], 'no_open_ports')
+        self.assertEqual(report['port_analyses'][0]['status'], 'closed_or_unreachable')
 
     def test_invalid_ports_and_session_paths_are_rejected(self):
         for value in ('0', '22;touch bad', '65536', [True], []):

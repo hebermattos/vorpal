@@ -7,25 +7,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      CUDA_VISIBLE_DEVICES: "-1"
-      TF_CPP_MIN_LOG_LEVEL: "2"
-      OMP_NUM_THREADS: "2"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-      - name: Install TensorFlow CPU and importer dependencies
-        run: python -m pip install -r requirements-training.txt
-      - name: Compile Python scripts
-        run: python -m compileall -q src tests
-      - name: Run importer and model tests
-        run: python -m unittest discover -s tests -v
-  ollama-rag:
-    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -33,15 +14,11 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install default dependencies without TensorFlow
+      - name: Install corpus import dependencies
         run: python -m pip install -r requirements.txt
-      - name: Check setup shell syntax
-        run: bash -n scripts/setup_ollama_rag.sh
-      - name: Run offline Ollama and RAG tests
+      - name: Check source syntax
         run: |
-          python -m unittest discover -s tests -p 'test_*ollama*.py' -v
-          python -m unittest discover -s tests -p test_rag.py -v
-          python -m unittest discover -s tests -p test_knowledge.py -v
-          python -m unittest discover -s tests -p test_scan_intelligence.py -v
-          python -m unittest discover -s tests -p 'test_assistant*.py' -v
-          python -m unittest discover -s tests -p 'test_web*.py' -v
+          python -m compileall -q src tests
+          node --check web/app.js
+      - name: Run all offline tests
+        run: python -m unittest discover -s tests -v
