@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from instruction_train import read_examples, encode_example, prepare_examples
+from instruction_train import read_examples, encode_example, prepare_examples, sample_indices
 from config import load_config
 from security_tools import planning_prompt
 
@@ -64,6 +64,17 @@ class InstructionTrainingTests(unittest.TestCase):
         item["reason"] = "a" * 500
         with self.assertRaises(ValueError):
             encode_example(item, 512)
+
+    def test_curriculum_and_balanced_sampling(self):
+        import numpy as np
+        records = [(self.sample(), None), ({**self.sample(), "tool": "nuclei"}, None)]
+        first = sample_indices(records, 20, np.random.default_rng(7), 0, 90)
+        second = sample_indices(records, 20, np.random.default_rng(7), 35, 90)
+        mixed = sample_indices(records, 200, np.random.default_rng(7), 75, 90)
+        self.assertEqual(set(first), {0})
+        self.assertEqual(set(second), {1})
+        self.assertEqual(set(mixed), {0, 1})
+        self.assertEqual(list(mixed), list(sample_indices(records, 200, np.random.default_rng(7), 75, 90)))
 
     def test_no_scanner_execution(self):
         item = self.sample()
