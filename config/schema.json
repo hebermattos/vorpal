@@ -1071,5 +1071,23 @@
         }
       }
     }
+  },
+  "instruction_train": {
+    "type": "object",
+    "properties": {
+      "paths": {
+        "type": "object",
+        "properties": {
+          "consumed_hashes": {"type": "string"}
+        }
+      },
+      "limits": {
+        "type": "object",
+        "properties": {
+          "max_examples": {"type": "integer", "minimum": 1},
+          "max_line_chars": {"type": "integer", "minimum": 100}
+        }
+      }
+    }
   }
 }
