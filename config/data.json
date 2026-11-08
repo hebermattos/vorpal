@@ -32,7 +32,8 @@
       "split_state.json",
       "latest.json",
       "best.json",
-      "metrics.jsonl"
+      "metrics.jsonl",
+      "scraping_state.json"
     ]
   },
   "runtime": {

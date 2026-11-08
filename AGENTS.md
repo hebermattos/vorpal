@@ -2,6 +2,17 @@
 
 This repository contains the Vorpal project, an educational prototype of an autoregressive model built with TensorFlow/Keras for programming data and defensive cybersecurity.
 
+## Project objectives and requirements
+
+- The project aims to identify vulnerabilities associated with a specific IP address on an authorized local network.
+- Use the trained model to guide vulnerability analysis as effectively as possible, while retaining command validation and human review.
+- Organize training by subject: Python, security, languages, and tools. Treat these as training categories; the currently available profiles are documented below.
+- Keep all configuration, prompts, and restriction rules in files.
+- Always use English for project content and communication.
+- Provide a single training command that imports URLs and files from the selected corpus directory and incorporates their data into the model.
+- Support training from scratch, incremental training using only new data, and retraining with previously used data.
+- Save logs for both training runs and vulnerability analyses.
+
 ## General rules
 
 - Work with Python 3.11, preferably on Linux/WSL.
@@ -19,6 +30,8 @@ This repository contains the Vorpal project, an educational prototype of an auto
 - `src/security_tools.py`: model-proposed and validated Nmap/Nuclei commands.
 - `src/benchmark.py` and `src/code_quality.py`: syntax and limited AST behavior checks without executing generated Python.
 - `src/import_dataset.py`: data import and validation.
+- `src/scraping.py` and `config/scraping.json`: bounded same-host crawling from corpus `scraping` source lists, with robots checks and incremental link caching.
+- `src/tfds_sources.py` and `config/tfds.json`: discovery of corpus `tfds` source lists and verified, reviewed TensorFlow Datasets adapters (Wiki40B Portuguese, Dolly, SQuAD v2, Natural Instructions and OPUS English–Portuguese GNOME).
 - `src/ingest_url.py`: backward-compatible adapter to the canonical URL importer.
 - `src/content_safety.py`: shared secret-content filter.
 - `src/data.py`: corpus preparation and train/validation split.
@@ -53,6 +66,10 @@ python src/generate.py --prompt "def validate_port(" --max-new 160 --threads 4
 Each `--steps` value adds that many steps when eligible documents exist. `--replay` includes previously used documents and requires a checkpoint plus metadata. `--reset` rebuilds the shared latest model from step zero and forces reimport of the selected corpus; it clears only that output's consumed-document state, preserving split assignments and other profiles' histories. Run `src/data.py` separately only to prepare existing text; it does not fetch URLs or extract PDFs. For subject evaluation, use `src/evaluate.py --data <profile-output>/valid.bin`.
 
 For example, continue the Nmap phase with `python src/train.py --profile nmap --replay --steps 500 --threads 4`. Keep persisted split assignments and document hashes compatible when moving or deduplicating sources. New checkpoints preserve NumPy window sampling state, but full TensorFlow execution is not guaranteed to resume bit-for-bit.
+
+`src/train.py` also discovers UTF-8 files named `tfds` under the selected corpus, with one supported versioned dataset identifier per line. It prepares missing datasets automatically and reuses verified caches. `corpus/pt_br/tfds` enables `wiki40b/pt:1.3.0`; install `requirements-tfds.txt` once before using it. Additional reviewed text adapters and disabled source examples are documented in `docs/TFDS_DATASETS.md`; templates, export limits and local holdout fraction are in `config/tfds_text.json`. Official validation/test assignments must never become training data. Normal, replay and reset modes use the existing consumed-document tracking; reset reuses the source cache. `--prepared` bypasses source discovery, and `src/data.py` alone does not download datasets.
+
+Files named `scraping` list public HTTP(S) starting URLs, one per line. The normal corpus importer follows links only within each seed's origin and containing directory (including subdirectories); redirects and cached links obey the same scope. The origin's robots.txt is a separate metadata request. The importer applies configured page/depth/byte limits, robots rules and request pacing. Successful pages and their discovered links are reused; failed pages retry. Preserve `scraping_state.json` as import metadata and exclude it from training. `--reset` refreshes scraping sources as well as regular imports.
 
 ## Code guidelines
 

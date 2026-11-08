@@ -1,6 +1,6 @@
 """Safe import of licensed documents, code and security data into Vorpal corpus.
 
-No code execution, archive extraction to disk, crawling or OCR. Review all content and licenses.
+No code execution, archive extraction to disk or OCR. Review all content and licenses.
 """
 
 import argparse
@@ -224,12 +224,16 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def fetch_url(url):
+def fetch_url(url, *, allowed_host=None, max_bytes=None, allow_url=None):
     # DNS preflight inherited from existing importer; not a complete protection
     # against DNS rebinding. Run this tool in a restricted-network environment.
     opener = urllib.request.build_opener(NoRedirect())
     for _ in range(MAX_REDIRECTS + 1):
+        if allowed_host is not None and urllib.parse.urlsplit(url).hostname != allowed_host:
+            raise ExtractError('scraping redirect outside the seed hostname is blocked')
         validate_url(url)
+        if allow_url is not None:
+            allow_url(url)
         req = urllib.request.Request(url, headers={'User-Agent': SETTINGS['runtime']['user_agent']})
         try:
             response = opener.open(req, timeout=SETTINGS["runtime"]["timeout"])
@@ -242,7 +246,9 @@ def fetch_url(url):
             url = urllib.parse.urljoin(url, location)
             continue
         with response:
-            data = response.read()
+            data = response.read() if max_bytes is None else response.read(max_bytes + 1)
+            if max_bytes is not None and len(data) > max_bytes:
+                raise ExtractError('scraping response exceeds the configured byte limit')
             path = urllib.parse.urlsplit(url).path
             name = urllib.parse.unquote(PurePosixPath(path).name)
             if classify(name) not in SUPPORTED | {'zip', 'tar'}:
@@ -276,8 +282,8 @@ def import_one(name, raw, provenance, out):
             rejected.append({'member': entry_name, 'reason': str(exc)})
     return accepted, rejected
 
-def collect_directory(root, *, used_sources=None, excluded_directory=None):
-    """Collect supported local files plus URLs from any file named exactly 'url'.
+def collect_directory(root, *, used_sources=None, excluded_directory=None, scraping_cache=None):
+    """Collect local files, direct 'url' sources and bounded 'scraping' sources.
 
     A URL list uses UTF-8, one URL per line; empty lines and # comments are ignored.
     Failures are recorded per line without interrupting other files or URLs.
@@ -289,6 +295,7 @@ def collect_directory(root, *, used_sources=None, excluded_directory=None):
     used_sources = used_sources if used_sources is not None else set()
     excluded = Path(excluded_directory).resolve() if excluded_directory else None
     sources, rejected, seen_urls = [], [], set()
+    scraping_cache = scraping_cache if scraping_cache is not None else {}
     for path in sorted(root.rglob('*')):
         resolved = path.resolve()
         if excluded and (resolved == excluded or excluded in resolved.parents):
@@ -299,6 +306,22 @@ def collect_directory(root, *, used_sources=None, excluded_directory=None):
         if not path.is_file():
             continue
         if is_internal_file(path.name):
+            continue
+        if path.name == 'scraping':
+            from scraping import crawl
+            try:
+                lines = path.read_text(encoding='utf-8-sig').splitlines()
+            except (UnicodeError, OSError) as exc:
+                rejected.append({'source': str(path), 'reason': f'unreadable scraping list: {exc}'})
+                continue
+            for line_no, line in enumerate(lines, 1):
+                seed = line.strip()
+                if not seed or seed.startswith('#'):
+                    continue
+                pages, errors = crawl(seed, used_sources=used_sources,
+                                      seen_urls=seen_urls, cache=scraping_cache)
+                sources.extend(pages)
+                rejected.extend({'source': f'{path}:{line_no}', **item} for item in errors)
             continue
         if path.name == 'url':
             try:
@@ -398,9 +421,25 @@ def import_directory(root, out=SETTINGS["functions"]["import_directory"]["out"],
                 source = entry.get('source', '')
                 if urllib.parse.urlsplit(source).scheme in {'http', 'https'}:
                     used_sources.add(f'url:{source}')
+    scraping_path = output / 'scraping_state.json'
+    scraping_cache = {}
+    if not force and scraping_path.is_file():
+        try:
+            scraping_cache = json.loads(scraping_path.read_text(encoding='utf-8'))
+            if not isinstance(scraping_cache, dict):
+                raise ValueError('expected an object')
+        except (ValueError, OSError):
+            print(f'Ignoring invalid scraping state: {scraping_path}', flush=True)
+            scraping_cache = {}
     sources, rejected = collect_directory(
-        root, used_sources=used_sources, excluded_directory=output)
-    return import_sources(sources, rejected, output, used_sources=used_sources)
+        root, used_sources=used_sources, excluded_directory=output, scraping_cache=scraping_cache)
+    result = import_sources(sources, rejected, output, used_sources=used_sources)
+    if scraping_cache:
+        output.mkdir(parents=True, exist_ok=True)
+        temporary = scraping_path.with_suffix('.json.tmp')
+        temporary.write_text(json.dumps(scraping_cache, indent=2), encoding='utf-8')
+        temporary.replace(scraping_path)
+    return result
 
 
 def main(argv=None):
@@ -426,8 +465,9 @@ def main(argv=None):
             print(f'Importing file: {path}', flush=True)
             sources = [(path.name, path.read_bytes(), str(path))]
         else:
-            sources, rejected = collect_directory(args.directory)
-        accepted, rejected = import_sources(sources, rejected, output)
+            accepted, rejected = import_directory(args.directory, output, force=True)
+        if not args.directory:
+            accepted, rejected = import_sources(sources, rejected, output)
         if not accepted:
             p.exit(1, 'No files were imported.\n')
         print('Review the licenses and files in corpus/imported before preparing data/.')

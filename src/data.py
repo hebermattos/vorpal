@@ -46,10 +46,14 @@ def _split_history(out):
     return train_hashes, valid_hashes
 
 
-def _split_documents(docs, out):
+def _split_documents(docs, out, *, assignments=None):
     """Persist content-hash assignments, including documents absent this run."""
     state_path = out / 'split_state.json'
     train_hashes, valid_hashes = _split_history(out)
+    for value, split in (assignments or {}).items():
+        if (split == 'train' and value in valid_hashes) or (split != 'train' and value in train_hashes):
+            raise ValueError('Official TFDS split conflicts with persisted local split history. Keep the existing history and use a separate output/checkpoint for this dataset.')
+        (train_hashes if split == 'train' else valid_hashes).add(value)
     digest = lambda doc: hashlib.sha256(doc[1].encode('utf-8')).hexdigest()
     docs.sort(key=digest)
     train = [doc for doc in docs if digest(doc) in train_hashes]
@@ -73,13 +77,36 @@ def _split_documents(docs, out):
     temporary.replace(state_path)
     return train, valid
 
-def prepare(root, out, *, exclude_hashes=()):
+def prepare(root, out, *, exclude_hashes=(), external_documents=()):
     root, out = Path(root).resolve(), Path(out)
     excluded = set(exclude_hashes)
     candidates, omitted, rejected = {}, set(), []
     known_train, known_valid = _split_history(out)
     skipped_internal, duplicates = [], []
     output_root = out.resolve()
+    assignments, official = {}, {}
+    # External adapters yield held-out documents first, so official splits win
+    # over duplicate training records and local copies of held-out text.
+    from prepare_wiki40b import clean_text
+    for name, text, split in external_documents:
+        if split not in ('train', 'validation', 'test'):
+            raise ValueError(f'Invalid external split: {split}')
+        try:
+            normalized = clean_text(text)
+        except ValueError:
+            # Non-Wiki adapters may legitimately quote marker-like code/text.
+            normalized = text.rstrip()
+        key = hashlib.sha256(normalized.encode('utf-8')).hexdigest()
+        if key in official:
+            continue
+        digest = hashlib.sha256(text.encode('utf-8')).hexdigest()
+        official[key] = split
+        assignments[digest] = split
+        if SECRET_CONTENT.search(text):
+            rejected.append(name)
+            continue
+        if split != 'test' and digest not in excluded:
+            candidates[key] = (name, text, digest)
     for path in sorted(root.rglob('*')):
         if path.is_symlink() or not path.is_file() or path.suffix.lower() not in EXT: continue
         if is_internal_file(path.name):
@@ -92,6 +119,19 @@ def prepare(root, out, *, exclude_hashes=()):
             rejected.append(str(path.relative_to(root))); continue
         if len(text.strip()) < SETTINGS["runtime"]["min_text_length"]: continue
         digest = hashlib.sha256(text.encode()).hexdigest()
+        if official:
+            try:
+                official_key = hashlib.sha256(clean_text(text).encode('utf-8')).hexdigest()
+            except ValueError:
+                official_key = hashlib.sha256(text.rstrip().encode('utf-8')).hexdigest()
+            if official_key in official:
+                split = official[official_key]
+                if split != 'train' and digest in known_train:
+                    raise ValueError(f'Local training history overlaps official TFDS held-out text: {path}')
+                if split == 'train' and digest in known_valid:
+                    raise ValueError(f'Official TFDS training text overlaps local held-out history: {path}')
+                duplicates.append(str(path.relative_to(root)))
+                continue
         # Keep existing document IDs, but collapse importer-added trailing newlines.
         duplicate_key = hashlib.sha256(text.rstrip().encode('utf-8')).hexdigest()
         candidate = (str(path.relative_to(root)), text, digest)
@@ -108,9 +148,9 @@ def prepare(root, out, *, exclude_hashes=()):
         else:
             candidates[duplicate_key] = candidate
     docs = [(name, text) for key, (name, text, _) in candidates.items() if key not in omitted]
-    if not docs and not excluded:
+    if not docs and not excluded and not assignments:
         raise SystemExit('No valid documents found. Add .py/.md/.txt files under corpus/.')
-    train, valid = _split_documents(docs, out)
+    train, valid = _split_documents(docs, out, assignments=assignments)
     out.mkdir(parents=True, exist_ok=True)
     (out / 'train.bin').write_bytes(b'\n\n'.join(s.encode('utf8') for _, s in train))
     (out / 'valid.bin').write_bytes(b'\n\n'.join(s.encode('utf8') for _, s in valid))

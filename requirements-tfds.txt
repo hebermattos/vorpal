@@ -1,0 +1,4 @@
+# Optional dataset import; uses the existing Vorpal TensorFlow CPU model.
+-r requirements.txt
+tensorflow-datasets>=4.9.9,<5
+importlib-resources>=6,<7

@@ -1,0 +1,14 @@
+{
+  "runtime": {
+    "min_text_length": 50,
+    "max_records_per_split": 10000,
+    "validation_fraction": 0.1
+  },
+  "prompts": {
+    "dolly": "Instruction: {instruction}\nContext: {context}\nResponse: {response}",
+    "squad": "Context: {context}\nQuestion: {question}\nAnswer: {answer}",
+    "natural_instructions": "Instruction: {definition}\nInput: {input}\nOutput: {output}",
+    "opus": "English: {en}\nPortuguese: {pt}",
+    "unanswerable": "The provided context does not contain the answer."
+  }
+}
