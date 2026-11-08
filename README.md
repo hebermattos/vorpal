@@ -176,6 +176,46 @@ python src/generate.py --question "Como proteger minhas contas contra phishing?"
 
 Question mode has no conversation memory and requires relevant training data. See the [PT-BR experiment](docs/PT_BR_TRAINING.md) and [Wiki40B workflow](docs/WIKI40B_TRAINING.md) for language training and prepared datasets. There is currently no language profile in the shared registry.
 
+## Local LLM scan interpretation (Mode 2)
+
+Mode 2 analyzes **saved** Nmap XML and Nuclei JSONL reports using a local,
+OpenAI-compatible **llama.cpp** server plus the optional local RAG index.
+It does not download models, launch scans or execute any proposed commands.
+The existing TensorFlow checkpoint and training workflows remain unchanged.
+
+Start your own trusted `llama-server` on loopback port 8080 with an
+already-present GGUF Instruct model (configure the server/model separately).
+Then run:
+
+```bash
+# Optional: build the offline documentation index first.
+python src/rag.py index --corpus corpus/security
+
+# Read an existing Nmap XML file; target must match a private LAN IPv4 in the file.
+python src/scan_intelligence.py --target 192.168.1.10 --authorized \
+  --nmap-xml reports/nmap.xml --output reports/scan_analysis.json
+
+# Existing Nuclei JSONL can be supplied simultaneously:
+python src/scan_intelligence.py --target 192.168.1.10 --authorized \
+  --nmap-xml reports/nmap.xml --nuclei-jsonl reports/nuclei.jsonl
+```
+
+Settings and the fixed system instruction live in `config/scan_intelligence.json`.
+The LLM request goes **only to 127.0.0.1**; redirects and proxy use are disabled.
+The returned JSON distinguishes observed scan evidence, model hypotheses,
+source references and proposed next checks. All hypotheses remain **unverified**.
+Suggested Nmap/Nuclei argument arrays are validated against the existing
+`security_tools` policy; invalid proposals are rejected rather than executed.
+This mode intentionally has no automatic follow-up scanning or command approval
+shortcut. Its analysis report is advisory and must not be used as a verified
+CVE or confirmed vulnerability report.
+
+Imported text and banners are untrusted, including possible prompt injection.
+RAG sources are bounded and referenced by document hash. A missing RAG index
+does not prevent analysis but leaves the response without documentation citations;
+verify such suggestions independently. No network request is made to scanner
+targets by this analysis module.
+
 ## Local retrieval (RAG)
 
 Vorpal can now index **existing UTF-8 corpus files and imported text** separately from
