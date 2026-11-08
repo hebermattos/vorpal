@@ -221,7 +221,7 @@ The built-in report generator accepts private/link-local IPv4 addresses and requ
 python vorpal.py 192.168.1.25 --authorized --ports 22,80,443 --output reports/local_scan.json
 ```
 
-It checks TCP ports and banners and writes a JSON report. Model-generated service/CVE suggestions are unverified and may be incorrect or outdated. Without a checkpoint, risk classification falls back to port-based heuristics. An empty report does not establish that a target is secure.
+It collects bounded TCP observations, retrieves local references and asks Ollama for unverified security advice. Ollama and a populated RAG index are required; this command does not use a Keras checkpoint or fall back to port-based risk scoring. An empty set of open ports does not establish that a target is secure. The old heuristic/Keras scanner is available only through `python vorpal.py legacy-scan`.
 
 Nmap and Nuclei are optional executables installed separately and available through `PATH`. Request a proposal from **Tools** in the dashboard or the CLI:
 
@@ -238,9 +238,9 @@ Planning does not run a scanner. Review the proposal, then use its printed `run`
 python src/web.py
 ```
 
-Open **http://127.0.0.1:8765**. The dashboard supports training, generation, dataset import, evaluation, configuration and reviewed Nmap/Nuclei proposals. One dashboard task runs at a time; logs persist in `logs/web/`.
+Open **http://127.0.0.1:8765/#assistant**. The dashboard starts with Ollama + RAG IP analysis, security chat, report follow-ups and knowledge updates. Legacy training, generation, dataset preparation, evaluation and tool-planning panels remain separate. One dashboard task or chat request runs at a time. Assistant records persist in `logs/assistant/`; background-job logs persist in `logs/web/`.
 
-Use `--port 8766` for another port or `--reload` for development. Reload refreshes frontend edits and restarts the backend after active jobs finish; unsaved form input may be lost. Stop the server with **Ctrl+C**.
+Use `--port 8766` for another port or `--reload` for development. Reload refreshes frontend edits and restarts the backend after active jobs and chat requests finish; unsaved form input may be lost. Stop the server with **Ctrl+C**.
 
 ## Import data separately
 
