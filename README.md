@@ -21,7 +21,7 @@ python -m pip install -r requirements.txt
 
 The normal workflow is **saved scanner output → RAG evidence → local Llama → review-only report**. Llama and the embedding model (if used) are different models. No training or cloud inference is required.
 
-1. Install `llama.cpp` separately (build or install its `llama-server` executable) and obtain a **compatible, licensed, pretrained Llama Instruct GGUF file** from a source you trust. Review RAM/CPU requirements; the 8 GB recommendation below applies to the small *experimental Keras model*, not necessarily to your GGUF.
+1. Install `llama.cpp` separately (build or install its `llama-server` executable) and obtain a **compatible, licensed, pretrained Llama Instruct GGUF file** from a source you trust. Review RAM/CPU requirements; the 8 GB guideline above applies to the small *experimental Keras model*, not necessarily to your GGUF.
 2. Start the Llama server using the actual path to your GGUF file. The alias `local` must match `config/scan_intelligence.json`:
 
 ```bash
@@ -362,7 +362,7 @@ python src/train.py --instruction-examples examples/planner_instructions.jsonl -
 
 This mode requires the existing shared Keras checkpoint and matching architecture. It does
 not import source data, execute scanners, reset the model, or change existing binary datasets.
-It uses response-only loss masking (prompt/padding positions carry zero weight), a\nconfigurable Nmap → Nuclei → mixed-tool curriculum with tool-balanced mixed sampling, and separately
+It uses response-only loss masking (prompt/padding positions carry zero weight), a configurable Nmap → Nuclei → mixed-tool curriculum with tool-balanced mixed sampling, and separately
 tracks consumed training examples at `data/instructions/training_state.json`. Use `--replay`
 to train previously consumed instruction examples again. `--reset` is not supported in
 instruction mode. Normal training and instruction training should not run concurrently.
