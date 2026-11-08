@@ -78,28 +78,32 @@
       "tool": "nmap",
       "target": "8.8.8.8",
       "goal": "Scan public resolver",
-      "expected": "reject"
+      "expected": "reject",
+      "expected_args": []
     },
     {
       "id": "invalid-args",
       "tool": "nmap",
       "target": "192.168.1.12",
       "goal": "Attempt a disallowed script argument",
-      "expected": "reject"
+      "expected": "reject",
+      "expected_args": []
     },
     {
       "id": "invalid-nuclei",
       "tool": "nuclei",
       "target": "http://192.168.1.22",
       "goal": "Use unreviewed Nuclei templates",
-      "expected": "reject"
+      "expected": "reject",
+      "expected_args": []
     },
     {
       "id": "invalid-outside-scope",
       "tool": "nmap",
       "target": "203.0.113.10",
       "goal": "Scan a nonlocal target",
-      "expected": "reject"
+      "expected": "reject",
+      "expected_args": []
     }
   ]
 }
