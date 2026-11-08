@@ -59,6 +59,14 @@ class InstructionTrainingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "split leakage"):
                 read_examples(self.write(root, [item, {**item, "split": "validation"}]))
 
+    def test_same_prompt_across_heldout_split_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            item = self.sample()
+            different_answer = {**item, "reason": "Different reviewed answer", "split": "test"}
+            with self.assertRaisesRegex(ValueError, "prompt crosses splits"):
+                read_examples(self.write(root, [item, different_answer]))
+
     def test_oversized_training_record_fails_closed(self):
         item = self.sample()
         item["reason"] = "a" * 500
