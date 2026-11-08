@@ -23,6 +23,7 @@ def read_examples(path, *, settings=None):
     path = Path(path)
     result = []
     seen = {}
+    seen_prompts = {}
     with path.open("r", encoding="utf-8") as stream:
         for line_number, raw in enumerate(stream, 1):
             if not raw.strip() or raw.lstrip().startswith("#"):
@@ -52,6 +53,12 @@ def read_examples(path, *, settings=None):
                 if seen[digest] != item["split"]:
                     raise ValueError(f"Instruction split leakage at line {line_number}")
                 raise ValueError(f"Duplicate instruction at line {line_number}")
+            prompt_key = hashlib.sha256(json.dumps({
+                key: item[key] for key in ("tool", "target", "goal")
+            }, sort_keys=True).encode("utf-8")).hexdigest()
+            if prompt_key in seen_prompts and seen_prompts[prompt_key] != item["split"]:
+                raise ValueError(f"Instruction prompt crosses splits at line {line_number}")
+            seen_prompts[prompt_key] = item["split"]
             seen[digest] = item["split"]
             result.append({**item, "hash": digest})
             if len(result) > settings["limits"]["max_examples"]:
@@ -139,12 +146,23 @@ def train_instructions(args, *, checkpoint, metadata, train_settings):
     records = prepare_examples(args.instruction_examples, context)
     state_path = Path(load_config("instruction_train")["paths"]["consumed_hashes"])
     consumed = set()
+    split_assignments = {}
     if state_path.is_file():
         state = json.loads(state_path.read_text(encoding="utf-8"))
         hashes = state.get("used_document_hashes")
         if not isinstance(hashes, list) or any(not isinstance(value, str) or len(value) != 64 for value in hashes):
             raise ValueError("Invalid instruction training history")
         consumed = set(hashes)
+        split_assignments = state.get("split_assignments", {})
+        if not isinstance(split_assignments, dict) or any(
+                not isinstance(key, str) or len(key) != 64
+                or value not in ("train", "validation", "test")
+                for key, value in split_assignments.items()):
+            raise ValueError("Invalid persisted instruction split assignments")
+    for item, _ in records:
+        prior = split_assignments.get(item["hash"])
+        if prior is not None and prior != item["split"]:
+            raise ValueError("Instruction split changed after being persisted; use an isolated dataset")
     selected = [(item, arrays) for item, arrays in records
                 if item["split"] == "train" and (getattr(args, "replay", False) or item["hash"] not in consumed)]
     held_out = [item for item, _ in records if item["split"] != "train"]
@@ -180,7 +198,10 @@ def train_instructions(args, *, checkpoint, metadata, train_settings):
     os.replace(temp, metadata)
     state_path.parent.mkdir(parents=True, exist_ok=True)
     temp_state = state_path.with_suffix(".json.tmp")
-    temp_state.write_text(json.dumps({"used_document_hashes": sorted(consumed |
-        {item["hash"] for item, _ in selected})}, indent=2), encoding="utf-8")
+    split_assignments.update({item["hash"]: item["split"] for item, _ in records})
+    temp_state.write_text(json.dumps({
+        "used_document_hashes": sorted(consumed | {item["hash"] for item, _ in selected}),
+        "split_assignments": split_assignments
+    }, indent=2), encoding="utf-8")
     os.replace(temp_state, state_path)
     print(f"Instruction checkpoint saved: {checkpoint}; train examples={len(selected)}; held-out={len(held_out)}")
