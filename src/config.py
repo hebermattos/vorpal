@@ -91,6 +91,10 @@ def validate_config(name, value):
         raise ConfigError(f'Invalid configuration {path}.host: local inference requires a loopback host.')
     if name == 'assistant' and value['default_tool'] not in {'tcp', 'nmap'}:
         raise ConfigError(f'Invalid configuration {path}.default_tool: select tcp or nmap.')
+    if name == 'assistant':
+        flags = value['nmap_required_flags']
+        if len(flags) != len(set(flags)) or set(flags) - {'-sT', '-sV', '--version-light', '-Pn', '--reason', '--open'}:
+            raise ConfigError(f'Invalid configuration {path}.nmap_required_flags: use unique supported evidence flags.')
     patterns = {
         "content_safety": [(value.get("secret_content"), "secret_content")],
         "corpus": [(value.get("skip_name"), "skip_name")],

@@ -49,10 +49,20 @@ unsupported source IDs fail closed.
 `src/assistant.py`. Authorization, target scope and selected ports are validated
 before any target connection. A populated RAG index is required first.
 `--tool tcp` performs bounded TCP connects and passive banner reads.
-`--tool nmap` invokes a separately installed Nmap executable with deterministic,
-policy-validated arguments for the selected target/ports. Service identification
+`--tool nmap` first generates a goal-based proposal through Ollama + RAG.
+The planner receives the exact selected ports as constraints; deterministic
+validation rejects expanded port scope or unsupported arguments. The command,
+rationale, references, saved plan ID and digest are returned for human review.
+A second request with `--plan-id`, `--digest` and `--authorized` executes that
+reviewed command; target, ports, executable and policy fingerprints are checked
+again before starting the externally installed Nmap executable. Service identification
 sends active probes; scripts and arbitrary shell arguments remain forbidden.
-The `default_tool`, `nmap_args`, deadline and output cap live in `assistant.json`.
+The `default_tool`, `planning_goal`, deadline and output cap live in `assistant.json`.
+`--goal` overrides the planning objective. `nmap_required_flags` sets minimum
+evidence capabilities; `planning_attempts` caps correction requests to the
+model. The planner receives the allowed argument catalog and previous rejection
+reason. Invalid proposals have no command fallback. Returned
+`execute_after_review` is a shell-quoted CLI request for the exact reviewed plan.
 `src/collectors.py` bounds execution and combined stdout/stderr bytes, preserves
 separate raw evidence files, and terminates the owned child on failure or
 cancellation. The exact standard `<!DOCTYPE nmaprun>` declaration is removed before parsing;

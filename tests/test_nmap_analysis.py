@@ -23,8 +23,92 @@ class NmapAnalysisTests(unittest.TestCase):
         (corpus / 'security.txt').write_text('Network security hardening firewall SSH access requires reviewed configuration and key authentication.')
         self.db = self.root / 'index.sqlite3'; rag.index(corpus, self.db)
 
+    def analyze_reviewed(self, target, **kwargs):
+        if kwargs.get('tool') != 'nmap' or kwargs.get('authorized') is not True:
+            return assistant.analyze_ip(target, **kwargs)
+        selected = assistant.ports_from_text(kwargs.get('ports'))
+        with patch('security_tools.shutil.which', return_value='/usr/bin/nmap'):
+            plan = assistant.security_tools.proposal_from_response(
+                'nmap', target, 'Fixture reviewed goal', json.dumps({'args': [*assistant.load_config('assistant')['nmap_required_flags'], '-p', ','.join(map(str, selected))],
+                                                                 'reason': 'Review the selected ports.'}))
+            plan = assistant.security_tools.write_report(plan, 'plans', root=self.root)
+        return assistant.analyze_ip(target, plan_id=plan['id'], digest=plan['digest'], **kwargs)
+
     def model(self, *args):
         return json.dumps({'answer': 'Review SSH access [1].', 'sources': [1]})
+
+    def test_nmap_generates_a_model_command_for_review_without_execution(self):
+        def planner(messages, settings):
+            payload = json.loads(messages[-1]['content'])
+            self.assertEqual(payload['constraints']['ports'], [22])
+            self.assertTrue(payload['references'])
+            return json.dumps({'args': ['-sT', '-sV', '--version-light', '-p', '22'],
+                               'reason': 'Use light service detection to identify SSH.'})
+        with patch('security_tools.shutil.which', return_value='/usr/bin/nmap'), patch('collectors.run') as run:
+            proposal = assistant.analyze_ip('127.0.0.1', authorized=True, tool='nmap', ports='22',
+                                             goal='Identify SSH', root=self.root, database=self.db, client=planner)
+        run.assert_not_called()
+        self.assertEqual(proposal['status'], 'command_review_required')
+        self.assertIn('--version-light', proposal['argv'])
+        self.assertIn('reason', proposal)
+        self.assertTrue(proposal['plan_id'])
+
+    def test_model_cannot_broaden_selected_ports(self):
+        with patch('security_tools.shutil.which', return_value='/usr/bin/nmap'), patch('collectors.run') as run:
+            with self.assertRaisesRegex(ValueError, 'port scope'):
+                assistant.analyze_ip('127.0.0.1', authorized=True, tool='nmap', ports='22',
+                                     root=self.root, database=self.db,
+                                     client=lambda *args: json.dumps({'args': ['-p', '22,80'], 'reason': 'Broader scan.'}))
+        run.assert_not_called()
+
+    def test_reviewed_generated_command_runs_then_analyzes_ports(self):
+        def model(messages, settings):
+            payload = json.loads(messages[-1]['content'])
+            if 'constraints' in payload:
+                return json.dumps({'args': ['-sT', '-sV', '--version-light', '-p', '22'],
+                                   'reason': 'Identify the selected SSH service with light probes.'})
+            return self.model(messages, settings)
+        with patch('security_tools.shutil.which', return_value='/usr/bin/nmap'), \
+                patch('collectors.run', side_effect=self.collect) as run:
+            proposal = assistant.analyze_ip('127.0.0.1', authorized=True, tool='nmap', ports='22',
+                                            root=self.root, database=self.db, client=model)
+            run.assert_not_called()
+            result = assistant.analyze_ip('127.0.0.1', authorized=True, tool='nmap', ports='22',
+                                          plan_id=proposal['plan_id'], digest=proposal['digest'],
+                                          root=self.root, database=self.db, client=model)
+        run.assert_called_once()
+        self.assertEqual(run.call_args.args[0], proposal['argv'])
+        self.assertEqual(result['port_analyses'][0]['port'], 22)
+        self.assertEqual(result['plan_id'], proposal['plan_id'])
+
+    def test_incomplete_command_is_corrected_by_the_model_without_fallback(self):
+        seen = []
+        def model(messages, settings):
+            payload = json.loads(messages[-1]['content']); seen.append(payload)
+            args = ['-p', '22'] if len(seen) == 1 else ['-sT', '-sV', '--version-light', '-p', '22']
+            return json.dumps({'args': args, 'reason': 'Identify SSH with bounded version probes.'})
+        with patch('security_tools.shutil.which', return_value='/usr/bin/nmap'), patch('collectors.run') as run:
+            result = assistant.analyze_ip('127.0.0.1', authorized=True, tool='nmap', ports='22',
+                                          root=self.root, database=self.db, client=model)
+        run.assert_not_called()
+        self.assertEqual(len(seen), 2)
+        self.assertIn('required evidence capabilities', seen[1]['previous_rejection'])
+        self.assertIn('-sV', result['argv'])
+
+    def test_wrong_review_digest_cannot_execute(self):
+        with patch('security_tools.shutil.which', return_value='/usr/bin/nmap'):
+            plan = assistant.security_tools.proposal_from_response('nmap', '127.0.0.1', 'Review SSH',
+                            json.dumps({'args': ['-p', '22'], 'reason': 'Inspect SSH.'}))
+            plan = assistant.security_tools.write_report(plan, 'plans', root=self.root)
+            with patch('collectors.run') as run, self.assertRaises(ValueError):
+                assistant.analyze_ip('127.0.0.1', authorized=True, tool='nmap', ports='22', plan_id=plan['id'],
+                                     digest='0' * 64, root=self.root, database=self.db)
+            run.assert_not_called()
+
+            with patch('collectors.run') as run, self.assertRaisesRegex(ValueError, 'port scope'):
+                assistant.analyze_ip('127.0.0.1', authorized=True, tool='nmap', ports='80', plan_id=plan['id'],
+                                     digest=plan['digest'], root=self.root, database=self.db)
+            run.assert_not_called()
 
     def collect(self, argv, output, errors, **limits):
         Path(output).write_bytes(XML); Path(errors).write_text('')
@@ -33,7 +117,7 @@ class NmapAnalysisTests(unittest.TestCase):
         with patch('security_tools.shutil.which', return_value='/usr/bin/nmap'), \
                 patch('collectors.run', side_effect=self.collect) as run, \
                 patch('assistant.socket.create_connection') as tcp:
-            result = assistant.analyze_ip('127.0.0.1', authorized=True, tool='nmap', ports='22',
+            result = self.analyze_reviewed('127.0.0.1', authorized=True, tool='nmap', ports='22',
                                           root=self.root, database=self.db, client=self.model)
         tcp.assert_not_called()
         argv = run.call_args.args[0]
@@ -48,7 +132,7 @@ class NmapAnalysisTests(unittest.TestCase):
         with patch('collectors.run') as run:
             for tool, authorized in [('shell', True), ('nmap', False)]:
                 with self.assertRaises(ValueError):
-                    assistant.analyze_ip('127.0.0.1', tool=tool, authorized=authorized,
+                    self.analyze_reviewed('127.0.0.1', tool=tool, authorized=authorized,
                                          root=self.root, database=self.db)
             run.assert_not_called()
 
@@ -59,11 +143,11 @@ class NmapAnalysisTests(unittest.TestCase):
                     patch('collectors.run', side_effect=ValueError('execution failed')), \
                     patch('assistant.answer') as model:
                 with self.assertRaises(ValueError):
-                    assistant.analyze_ip('127.0.0.1', authorized=True, tool='nmap', ports='22',
+                    self.analyze_reviewed('127.0.0.1', authorized=True, tool='nmap', ports='22',
                                          root=self.root, database=self.db)
                 model.assert_not_called()
         records = [json.loads(path.read_text()) for path in (self.root / 'logs/assistant').glob('analysis_*.json')]
-        self.assertEqual(len(records), 2)
+        self.assertEqual(len(records), 1)
         self.assertTrue(all(r['status'] == 'failed' for r in records))
 
     def test_custom_xml_entities_are_not_accepted(self):
@@ -72,7 +156,7 @@ class NmapAnalysisTests(unittest.TestCase):
             Path(errors).write_text('')
         with patch('security_tools.shutil.which', return_value='/usr/bin/nmap'), \
                 patch('collectors.run', side_effect=bad_collect), self.assertRaisesRegex(ValueError, 'DTD'):
-            assistant.analyze_ip('127.0.0.1', authorized=True, tool='nmap', ports='22',
+            self.analyze_reviewed('127.0.0.1', authorized=True, tool='nmap', ports='22',
                                  root=self.root, database=self.db, client=self.model)
 
     def collect_two_ports(self, argv, output, errors, **limits):
@@ -93,7 +177,7 @@ class NmapAnalysisTests(unittest.TestCase):
         with patch('security_tools.shutil.which', return_value='/usr/bin/nmap'), \
                 patch('collectors.run', side_effect=self.collect_two_ports), \
                 patch('rag.search', side_effect=search) as retrieval:
-            result = assistant.analyze_ip('127.0.0.1', authorized=True, tool='nmap', ports='22,80,443',
+            result = self.analyze_reviewed('127.0.0.1', authorized=True, tool='nmap', ports='22,80,443',
                                           root=self.root, database=self.db, client=model)
         self.assertEqual([item['selected_ports'] for item in seen], [[22], [80]])
         self.assertTrue(all(len(item['open_tcp']) == 1 for item in seen))
@@ -113,7 +197,7 @@ class NmapAnalysisTests(unittest.TestCase):
             return self.model(messages, settings)
         with patch('security_tools.shutil.which', return_value='/usr/bin/nmap'), \
                 patch('collectors.run', side_effect=self.collect_two_ports):
-            result = assistant.analyze_ip('127.0.0.1', authorized=True, tool='nmap', ports='22,80',
+            result = self.analyze_reviewed('127.0.0.1', authorized=True, tool='nmap', ports='22,80',
                                           root=self.root, database=self.db, client=model)
         self.assertEqual(result['status'], 'partial')
         self.assertEqual(result['port_analyses'][0]['status'], 'failed')

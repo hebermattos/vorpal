@@ -251,7 +251,7 @@ def proposal_from_response(tool, target, goal, response, *, settings=None, root=
     return plan
 
 
-def propose(tool, target, goal, *, settings=None, root=ROOT, client=None, database=None):
+def propose(tool, target, goal, *, settings=None, root=ROOT, client=None, database=None, constraints=None, feedback=None):
     """Use local Ollama + RAG to propose arguments, never execute them."""
     settings = _settings(settings)
     target = validate_target(tool, target)
@@ -272,7 +272,9 @@ def propose(tool, target, goal, *, settings=None, root=ROOT, client=None, databa
                for i, doc in enumerate(docs, 1)]
     response = (client or scan_intelligence._local_chat)([
         {'role': 'system', 'content': settings['planner']['instruction'] + settings['planner'][tool]},
-        {'role': 'user', 'content': json.dumps({'target': target, 'goal': goal, 'references': context})}
+        {'role': 'user', 'content': json.dumps({'target': target, 'goal': goal, 'references': context,
+                                             'constraints': constraints or {}, 'previous_rejection': feedback,
+                                             'argument_catalog': {key: settings['tools'][tool][key] for key in ('flags', 'values')}})}
     ], model_settings)
     try:
         plan = proposal_from_response(tool, target, goal, response, settings=settings, root=root)

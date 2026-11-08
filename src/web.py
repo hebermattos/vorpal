@@ -234,7 +234,7 @@ class Application:
 
     def command(self, action, params):
         allowed = {
-            'analyze_ip': {'target', 'authorized', 'ports', 'tool'},
+            'analyze_ip': {'target', 'authorized', 'ports', 'tool', 'goal', 'plan_id', 'digest'},
             'knowledge_update': {'import_sources'},
             'tool_plan': {'tool', 'target', 'goal'},
             'tool_run': {'plan_id', 'digest', 'authorized'},
@@ -251,6 +251,12 @@ class Application:
                 if params['tool'] not in {'tcp', 'nmap'}:
                     raise ValueError('Select tcp or nmap.')
                 command += ['--tool', params['tool']]
+            for key in ('goal', 'plan_id', 'digest'):
+                if key in params:
+                    value = params[key]
+                    if not isinstance(value, str) or not value.strip() or len(value) > 1024:
+                        raise ValueError(f'Invalid {key}.')
+                    command += ['--' + key.replace('_', '-'), value]
             if params.get('ports'):
                 try:
                     from .assistant import ports_from_text
@@ -303,6 +309,7 @@ class Application:
     def state(self):
         inference = self.configuration('scan_intelligence')
         return {'token': self.token, 'poll_ms': self.settings['runtime']['poll_ms'],
+                'default_tool': self.configuration('assistant')['default_tool'],
                 'inference': {key: inference[key] for key in ('host', 'port', 'model')},
                 'jobs': self.jobs.snapshot(),
                 'configurations': sorted(path.stem for path in (self.root / 'config').glob('*.json') if path.stem != 'schema')}

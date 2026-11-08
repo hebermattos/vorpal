@@ -32,6 +32,10 @@ class WebApplicationTests(unittest.TestCase):
         self.assertIn('--authorized', command)
         nmap = self.app.command('analyze_ip', {'target': '127.0.0.1', 'authorized': True, 'tool': 'nmap'})
         self.assertEqual(nmap[nmap.index('--tool') + 1], 'nmap')
+        reviewed = self.app.command('analyze_ip', {'target': '127.0.0.1', 'authorized': True, 'tool': 'nmap',
+                                    'goal': 'Identify SSH', 'plan_id': 'a' * 24, 'digest': 'b' * 64})
+        self.assertEqual(reviewed[reviewed.index('--goal') + 1], 'Identify SSH')
+        self.assertEqual(reviewed[reviewed.index('--plan-id') + 1], 'a' * 24)
         with self.assertRaises(ValueError): self.app.command('analyze_ip', {'target': '127.0.0.1', 'authorized': True, 'tool': 'shell'})
         with self.assertRaises(ValueError): self.app.command('analyze_ip', {'target': '8.8.8.8', 'authorized': True})
         with self.assertRaises(ValueError): self.app.command('shell', {})

@@ -96,25 +96,48 @@ concurrent index writers.
 ## Analyze an authorized IP
 
 ```bash
-python vorpal.py analyze --target 192.168.1.10 --authorized --tool nmap --ports 22,80,443
+python vorpal.py analyze --target 192.168.1.10 --authorized --tool nmap \
+  --ports 22,80,443 --goal "Identify SSH and web service versions with low-impact probes"
 # Equivalent positional shortcut:
-python vorpal.py 192.168.1.10 --authorized --ports 22,80,443
+python vorpal.py 192.168.1.10 --authorized --tool nmap --ports 22,80,443
 ```
 
 Select the evidence collector with `--tool`:
 
-- `nmap`: run the separately installed Nmap executable with policy-validated,
-  unprivileged TCP/service-identification arguments. Only the selected local
-  target and ports are included; version identification sends active probes.
+- `nmap`: Ollama + RAG selects arguments appropriate to the goal and returns the
+  literal command, rationale, references, plan ID and digest for review. No scan
+  runs at this stage. After review, the separately installed Nmap executable
+  runs only the validated command. Service identification sends active probes.
 - `tcp`: use built-in TCP connections and passive banner reads, with no external
   scanner. This remains the configured default.
 
 The dashboard exposes the same **Evidence tool** selector. Set `default_tool`
 in `config/assistant.json` to `nmap` to use it when the parameter is omitted.
-Nmap arguments, execution timeout and output limits are also stored there;
+The default planning goal, execution timeout and output limits are stored there;
 `config/security_tools.json` enforces the shared scanner policy. Arbitrary tools,
-shell commands, Nmap scripts and unvalidated arguments are not accepted. Vorpal
+shell commands, Nmap scripts and unvalidated arguments are not accepted. `nmap_required_flags`
+configures minimum evidence capabilities (TCP/service detection and light
+version probes by default). `planning_attempts` bounds model correction attempts
+(default two); an under-specified or unsafe command is sent back for correction
+within that limit and then rejected if still invalid. Vorpal
 does not install Nmap or silently switch collectors if it is unavailable.
+
+After reviewing the returned command, execute that exact proposal and analyze
+its collected evidence:
+
+```bash
+python vorpal.py analyze --target 192.168.1.10 --authorized --tool nmap \
+  --ports 22,80,443 --plan-id PLAN_ID --digest DIGEST
+```
+
+The proposal must keep exactly the selected target and ports. A changed digest,
+configuration, executable or scope requires a new reviewed proposal. Invalid
+model output is rejected without a fixed-command fallback. The returned
+`execute_after_review` command includes the exact plan ID, digest, target, ports
+and database for convenient CLI execution after review. The dashboard uses
+the same two stages: **Generate Nmap command for review**, then explicitly check
+command review/target authorization and **Run reviewed command and analyze
+ports**. Editing target, ports, tool or goal invalidates the pending review.
 
 Authorization and one private, loopback or link-local IPv4 literal are required.
 There is no subnet scan. Default ports and TCP connection limits live in
