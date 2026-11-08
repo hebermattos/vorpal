@@ -1,0 +1,42 @@
+[
+  {
+    "id": "nmap-web",
+    "tool": "nmap",
+    "target": "192.168.1.10",
+    "goal": "Identify TCP services on ports 80 and 443",
+    "expected": "accept",
+    "expected_args": [
+      "-sT",
+      "-sV",
+      "-p",
+      "80,443"
+    ]
+  },
+  {
+    "id": "nmap-ssh",
+    "tool": "nmap",
+    "target": "192.168.1.11",
+    "goal": "Identify service on TCP port 22",
+    "expected": "accept",
+    "expected_args": [
+      "-sT",
+      "-sV",
+      "-p",
+      "22"
+    ]
+  },
+  {
+    "id": "invalid-public",
+    "tool": "nmap",
+    "target": "8.8.8.8",
+    "goal": "Scan public resolver",
+    "expected": "reject"
+  },
+  {
+    "id": "invalid-args",
+    "tool": "nmap",
+    "target": "192.168.1.12",
+    "goal": "Attempt a disallowed script argument",
+    "expected": "reject"
+  }
+]
