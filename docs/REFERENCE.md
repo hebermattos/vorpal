@@ -1,13 +1,13 @@
 # Vorpal technical reference
 
-Vorpal is an educational autoregressive model project **trained from scratch**, experimentally specialized in programming data and defensive cybersecurity. The training and inference backend is **TensorFlow/Keras on CPU**, without PyTorch or pre-trained models.
+Vorpal supports two separate workflows: the **default defensive scan-report analysis**, using a **pretrained local Llama Instruct GGUF through llama.cpp and a required local RAG index**, and an **experimental from-scratch TensorFlow/Keras CPU model** for independent training, evaluation and generation.
 
-> Research prototype: default context window of only 512 **bytes** and a small parameter count. It is not a reliable vulnerability detector and does not replace security review.
+> Research prototype: neither retrieved context nor model output establishes a confirmed vulnerability. The experimental Keras checkpoint has a small 512-byte context and is not the default scan-analysis backend. Human review remains essential.
 
 ## Environment
 
 - Python 3.11 recommended (Linux/Ubuntu/WSL).
-- CPU only; about 8 GB of RAM is recommended for the default model.
+- CPU inference is supported. The ~8 GB RAM guidance concerns the small Keras experiment; GGUF memory needs depend on Llama model size and quantization.
 - TensorFlow 2.16+ and Keras 3 via `tf.keras` (see `requirements.txt`).
 - A clean install is recommended during migration.
 
@@ -19,6 +19,70 @@ source .venv/bin/activate
 python -m pip install -U pip
 python -m pip install -r requirements.txt
 ```
+
+## Default local Llama + RAG workflow
+
+The primary walkthrough is in the [README](../README.md#default-analysis-local-llama--rag).
+The analyzer `src/scan_intelligence.py` accepts **saved** Nmap XML and/or Nuclei
+JSONL for one explicitly authorized private IPv4 target. It does not scan.
+Configuration and the fixed safety prompt are in `config/scan_intelligence.json`.
+
+Run an independently installed `llama-server` with a previously obtained,
+licensed and hardware-compatible Llama Instruct GGUF model. Example:
+
+```bash
+llama-server -m /path/to/your-instruct-model.gguf --alias local --host 127.0.0.1 --port 8080
+```
+
+The `local` alias must match the `model` value in
+`config/scan_intelligence.json`; `port` defaults to `8080`. All analysis
+requests go to loopback (no cloud provider, proxies or redirects). No model
+is downloaded, trained or fine-tuned automatically.
+
+### RAG index ownership
+
+Run `python vorpal.py knowledge update` to synchronize local sources from
+`corpus/` into `data/rag/index.sqlite3`. The Knowledge Manager reads
+`config/knowledge.json` and stores JSON audit reports in `logs/knowledge/`.
+Passing `--import-sources` explicitly opts into the existing incremental
+importer, which may fetch URLs; without it the command indexes only already
+available files. Previously accepted URL entries are not automatically
+re-fetched. No training or scanner processes are launched.
+
+The default index is **lexical BM25** (SQLite FTS5 if available, otherwise
+the slower portable fallback). **Hybrid** retrieval is optional:
+`python vorpal.py knowledge update --hybrid` requires a separately installed
+local sentence-transformer embedding model at the configured path.
+The embedding model is distinct from the Llama GGUF. Changing embedding
+mode requires **a new index database**, not an in-place conversion.
+
+Avoid using `python src/rag.py index --corpus corpus/security` with the
+shared database: the low-level indexer synchronizes only the selected root
+and drops entries outside it. For a separate subset index, use:
+
+```bash
+python src/rag.py index --corpus corpus/security --database data/rag/security.sqlite3
+python src/rag.py search "HTTP headers" --database data/rag/security.sqlite3
+```
+
+To analyze with that isolated index, pass
+`--rag-db data/rag/security.sqlite3` to `src/scan_intelligence.py`.
+
+### Review and evidence boundaries
+
+The analyzer fails if RAG retrieval is unavailable or returns no relevant
+documents. Retrieved text and scanner fields are untrusted input. Each
+generated hypothesis must cite at least one returned document ID, but
+reference-ID validity does **not** establish factual support. Findings
+remain unverified; neither banners nor guessed versions establish CVEs.
+Generated Nmap/Nuclei arguments pass the separate deterministic policy
+validator. They are proposals for human review, **not executable actions**.
+No automatic follow-up execution is available from this module.
+
+`python vorpal.py <target> --authorized ...` remains the distinct, legacy
+local TCP-report command; `src/security_tools.py plan` remains the separate
+experimental Keras-checkpoint command planner. Neither is a shortcut for
+the default Llama + RAG report analysis.
 
 ## Local web interface
 
@@ -61,6 +125,9 @@ Runtime defaults are read from the JSON files in `config/`; no extra dependency 
 
 | File | Settings |
 | --- | --- |
+| `config/scan_intelligence.json` | Local llama.cpp server port/model alias, generation limits, report bounds and analysis prompt |
+| `config/rag.json` | RAG database, source paths, chunking, BM25/hybrid retrieval and local embedding model |
+| `config/knowledge.json` | Incremental whole-corpus indexing, import destination and audit reports |
 | `config/security_tools.json` | Nmap/Nuclei planning, allowed arguments, execution bounds and reviewed template fingerprints |
 | `config/web.json` | Local dashboard server, corpus profiles, task limits, logs and polling |
 | `config/tensorflow.json` | TensorFlow C++ log level before import (0: all, 1: warnings/errors, 2: errors, 3: fatal only) |
