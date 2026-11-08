@@ -72,7 +72,9 @@ Only validated loopback hosts are accepted. Keep proxies and redirects disabled.
 `config/assistant.json` stores prompts, default ports, connection/history/log
 limits. Select collectors with `--tool tcp|nmap` or configured `default_tool`.
 Nmap is installed externally. Generate goal-based proposals through Ollama + RAG
-with exact port constraints, validate arguments through the shared scanner policy,
+with exact port constraints. Bind the target/port scope in application code,
+reject conflicting discovery modes or changed scope, validate probe arguments
+through the shared scanner policy,
 and require review of the saved command/digest before executing it. Revalidate
 target, ports, policy and executable; invalidate UI review after input changes.
 Bound output/runtime, save raw evidence and never fall back to fixed commands. `knowledge.json` and `rag.json` must refer to consistent index paths.

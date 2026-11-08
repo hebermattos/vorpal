@@ -119,7 +119,9 @@ shell commands, Nmap scripts and unvalidated arguments are not accepted. `nmap_r
 configures minimum evidence capabilities (TCP/service detection and light
 version probes by default). `planning_attempts` bounds model correction attempts
 (default two); an under-specified or unsafe command is sent back for correction
-within that limit and then rejected if still invalid. Vorpal
+within that limit and then rejected if still invalid. Failed planning saves
+the rejected responses/errors under `reports/security_tools/plans/` and reports
+the diagnostic path. Vorpal
 does not install Nmap or silently switch collectors if it is unavailable.
 
 After reviewing the returned command, execute that exact proposal and analyze
@@ -130,6 +132,10 @@ python vorpal.py analyze --target 192.168.1.10 --authorized --tool nmap \
   --ports 22,80,443 --plan-id PLAN_ID --digest DIGEST
 ```
 
+Vorpal binds the target and exact `-p` list in code; the model selects probe
+options. Omitting `--ports` uses `default_ports` from `config/assistant.json`.
+A model may omit `-p`; Vorpal attaches the selected list before full validation.
+Conflicting discovery modes or an explicitly different port scope are rejected.
 The proposal must keep exactly the selected target and ports. A changed digest,
 configuration, executable or scope requires a new reviewed proposal. Invalid
 model output is rejected without a fixed-command fallback. The returned

@@ -229,7 +229,7 @@ def plan_digest(plan):
     return hashlib.sha256(json.dumps({field: plan[field] for field in fields}, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()).hexdigest()
 
 
-def proposal_from_response(tool, target, goal, response, *, settings=None, root=ROOT):
+def proposal_from_response(tool, target, goal, response, *, settings=None, root=ROOT, selected_ports=None):
     """Validate generated JSON and bind the exact command shown for review."""
     settings = _settings(settings)
     target = validate_target(tool, target)
@@ -240,7 +240,24 @@ def proposal_from_response(tool, target, goal, response, *, settings=None, root=
         reason = payload['reason']
         if not isinstance(reason, str) or not reason.strip() or len(reason) > settings['runtime']['max_reason_chars'] or not reason.isprintable():
             raise ToolPlanError('Invalid model rationale.')
-        args = validate_arguments(tool, payload['args'], settings=settings)
+        proposed_args = payload['args']
+        if selected_ports is not None:
+            if (tool != 'nmap' or not isinstance(selected_ports, list) or not selected_ports
+                    or any(type(port) is not int or not 1 <= port <= 65535 for port in selected_ports)
+                    or len(selected_ports) > settings['runtime']['max_ports']
+                    or len(set(selected_ports)) != len(selected_ports)):
+                raise ToolPlanError('Invalid application-selected port scope.')
+            if not isinstance(proposed_args, list) or any(not isinstance(arg, str) for arg in proposed_args):
+                raise ToolPlanError('The model must return an argument list.')
+            if any(flag in proposed_args for flag in ('--top-ports', '-F')):
+                raise ToolPlanError('Selected-port analysis cannot use --top-ports or -F; remove discovery modes.')
+            if '-p' not in proposed_args:
+                proposed_args = [*proposed_args, '-p', ','.join(map(str, sorted(selected_ports)))]
+        args = validate_arguments(tool, proposed_args, settings=settings)
+        if selected_ports is not None:
+            actual = [int(port) for port in args[args.index('-p') + 1].split(',')]
+            if set(actual) != set(selected_ports):
+                raise ToolPlanError('The proposal changed the selected port scope.')
         argv = build_command(tool, target, args, settings=settings, root=root)
     except (ValueError, TypeError, KeyError) as exc:
         raise ToolPlanError(f'Model proposal rejected: {exc}') from exc
@@ -277,7 +294,8 @@ def propose(tool, target, goal, *, settings=None, root=ROOT, client=None, databa
                                              'argument_catalog': {key: settings['tools'][tool][key] for key in ('flags', 'values')}})}
     ], model_settings)
     try:
-        plan = proposal_from_response(tool, target, goal, response, settings=settings, root=root)
+        plan = proposal_from_response(tool, target, goal, response, settings=settings, root=root,
+                                      selected_ports=(constraints or {}).get('ports') if tool == 'nmap' else None)
     except ToolPlanError as exc:
         raise ToolPlanError(str(exc), response=response) from exc
     plan.update(model_response=response, sources=[{k: doc[k] for k in ('source', 'line', 'sha256')} for doc in docs])
