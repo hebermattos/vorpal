@@ -1,0 +1,5 @@
+{
+  "ollama_model": "llama3.2:3b",
+  "embedding_model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "startup_timeout_seconds": 60
+}

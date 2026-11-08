@@ -1,6 +1,6 @@
 # Vorpal technical reference
 
-Vorpal supports two separate workflows: the **default defensive scan-report analysis**, using a **pretrained local Llama Instruct GGUF through llama.cpp and a required local RAG index**, and an **experimental from-scratch TensorFlow/Keras CPU model** for independent training, evaluation and generation.
+Vorpal supports two separate workflows: the **default defensive scan-report analysis**, using **Ollama (or llama.cpp) and a required local RAG index**, and an **experimental from-scratch TensorFlow/Keras CPU model** for independent training, evaluation and generation.
 
 > Research prototype: neither retrieved context nor model output establishes a confirmed vulnerability. The experimental Keras checkpoint has a small 512-byte context and is not the default scan-analysis backend. Human review remains essential.
 
@@ -8,7 +8,7 @@ Vorpal supports two separate workflows: the **default defensive scan-report anal
 
 - Python 3.11 recommended (Linux/Ubuntu/WSL).
 - CPU inference is supported. The ~8 GB RAM guidance concerns the small Keras experiment; GGUF memory needs depend on Llama model size and quantization.
-- TensorFlow 2.16+ and Keras 3 via `tf.keras` (see `requirements.txt`).
+- TensorFlow 2.16+ and Keras 3 via `tf.keras` are optional training dependencies (see `requirements-training.txt`). The default `requirements.txt` supports Ollama + RAG without TensorFlow.
 - A clean install is recommended during migration.
 
 ```bash
@@ -149,11 +149,11 @@ For example, change `policy.default_ports` in `config/local_vuln_scan.json` to s
 
 `src/config.py` validates files against the type, key and range rules in `config/schema.json` and reports missing files, unknown keys and invalid values. The schema is the loader's validation specification, not a set of defaults. Authorization remains an explicit `--authorized` action. Byte vocabulary, binary formats, protocol validation and report field names remain code contracts.
 
-On Linux, `requirements.txt` selects `tensorflow-cpu`. If an existing environment contains the `tensorflow` GPU-capable distribution, migrate it once using:
+For optional Keras training on Linux, `requirements-training.txt` selects `tensorflow-cpu`. If an existing training environment contains the `tensorflow` GPU-capable distribution, migrate it once using:
 
 ```bash
 python -m pip uninstall -y tensorflow
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-training.txt
 ```
 
 The entry points select CPU before importing TensorFlow. The default C++ log level is `2` (errors remain visible); set `TF_CPP_MIN_LOG_LEVEL=0` when debugging startup. CPU builds avoid CUDA driver initialization messages rather than hiding them.

@@ -1288,5 +1288,21 @@
         "type": "string"
       }
     }
+  },
+  "setup_ollama_rag": {
+    "type": "object",
+    "properties": {
+      "ollama_model": {
+        "type": "string"
+      },
+      "embedding_model_id": {
+        "type": "string"
+      },
+      "startup_timeout_seconds": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 600
+      }
+    }
   }
 }
