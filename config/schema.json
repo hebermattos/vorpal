@@ -1,252 +1,4 @@
 {
-  "train": {
-    "type": "object",
-    "properties": {
-      "cli": {
-        "type": "object",
-        "properties": {
-          "steps": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "batch": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "context": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "dim": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "layers": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "heads": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "dropout": {
-            "type": "number",
-            "minimum": 0,
-            "exclusive_maximum": 1
-          },
-          "threads": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "lr": {
-            "type": "number",
-            "exclusive_minimum": 0
-          },
-          "seed": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "corpus": {
-            "type": "string"
-          },
-          "out": {
-            "type": "string"
-          },
-          "log_dir": {
-            "type": "string"
-          }
-        }
-      },
-      "policy": {
-        "type": "object",
-        "properties": {
-          "checkpoint": {
-            "type": "string"
-          },
-          "metadata": {
-            "type": "string"
-          }
-        }
-      },
-      "runtime": {
-        "type": "object",
-        "properties": {
-          "clipnorm": {
-            "type": "number",
-            "exclusive_minimum": 0
-          },
-          "log_interval": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "checkpoint_interval": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "imported_subdir": {
-            "type": "string"
-          },
-          "validation_samples": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "validation_interval": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "validation_seed": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "best_checkpoint_name": {
-            "type": "string"
-          },
-          "best_metadata_name": {
-            "type": "string"
-          },
-          "metrics_name": {
-            "type": "string"
-          }
-        }
-      }
-    }
-  },
-  "evaluate": {
-    "type": "object",
-    "properties": {
-      "cli": {
-        "type": "object",
-        "properties": {
-          "samples": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "threads": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "data": {
-            "type": "string"
-          },
-          "checkpoint": {
-            "type": "string"
-          }
-        }
-      },
-      "seed": {
-        "type": "integer",
-        "minimum": 0
-      }
-    }
-  },
-  "generate": {
-    "type": "object",
-    "properties": {
-      "cli": {
-        "type": "object",
-        "properties": {
-          "prompt": {
-            "type": "string"
-          },
-          "max_new": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "temperature": {
-            "type": "number",
-            "exclusive_minimum": 0,
-            "maximum": 2
-          },
-          "threads": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "checkpoint": {
-            "type": "string"
-          }
-        }
-      },
-      "functions": {
-        "type": "object",
-        "properties": {
-          "generate": {
-            "type": "object",
-            "properties": {
-              "max_new": {
-                "type": "integer",
-                "exclusive_minimum": 0
-              },
-              "temperature": {
-                "type": "number",
-                "exclusive_minimum": 0,
-                "maximum": 2
-              },
-              "seed": {
-                "type": "integer",
-                "minimum": 0
-              }
-            }
-          }
-        }
-      }
-    }
-  },
-  "data": {
-    "type": "object",
-    "properties": {
-      "cli": {
-        "type": "object",
-        "properties": {
-          "corpus": {
-            "type": "string"
-          },
-          "out": {
-            "type": "string"
-          }
-        }
-      },
-      "policy": {
-        "type": "object",
-        "properties": {
-          "ext": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "skip_dirs": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "skip_name": {
-            "type": "string"
-          },
-          "skip_files": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "runtime": {
-        "type": "object",
-        "properties": {
-          "min_text_length": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "validation_fraction": {
-            "type": "number",
-            "minimum": 0,
-            "exclusive_maximum": 1
-          }
-        }
-      }
-    }
-  },
   "import_dataset": {
     "type": "object",
     "properties": {
@@ -343,119 +95,6 @@
       }
     }
   },
-  "local_vuln_scan": {
-    "type": "object",
-    "properties": {
-      "cli": {
-        "type": "object",
-        "properties": {
-          "timeout": {
-            "type": "number",
-            "exclusive_minimum": 0
-          },
-          "output": {
-            "type": "string"
-          }
-        }
-      },
-      "functions": {
-        "type": "object",
-        "properties": {
-          "run_scan": {
-            "type": "object",
-            "properties": {
-              "timeout": {
-                "type": "number",
-                "exclusive_minimum": 0
-              }
-            }
-          }
-        }
-      },
-      "policy": {
-        "type": "object",
-        "properties": {
-          "default_ports": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 65535
-            },
-            "min_items": 1
-          }
-        }
-      },
-      "runtime": {
-        "type": "object",
-        "properties": {
-          "checkpoint": {
-            "type": "string"
-          },
-          "reports_dir": {
-            "type": "string"
-          },
-          "banner_bytes": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "banner_prompt_chars": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "service_max_new": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "cve_max_new": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "temperature": {
-            "type": "number",
-            "exclusive_minimum": 0,
-            "maximum": 2
-          },
-          "max_note_chars": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "max_cves": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "http_probe_ports": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 65535
-            }
-          },
-          "medium_risk_ports": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 65535
-            }
-          },
-          "high_risk_delta": {
-            "type": "number",
-            "exclusive_minimum": 0
-          },
-          "medium_risk_delta": {
-            "type": "number",
-            "minimum": 0
-          },
-          "banner_preview_chars": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          }
-        }
-      }
-    }
-  },
   "ingest_url": {
     "type": "object",
     "properties": {
@@ -474,202 +113,11 @@
       }
     }
   },
-  "model": {
-    "type": "object",
-    "properties": {
-      "functions": {
-        "type": "object",
-        "properties": {
-          "build_model": {
-            "type": "object",
-            "properties": {
-              "context": {
-                "type": "integer",
-                "exclusive_minimum": 0
-              },
-              "d_model": {
-                "type": "integer",
-                "exclusive_minimum": 0
-              },
-              "layers": {
-                "type": "integer",
-                "exclusive_minimum": 0
-              },
-              "heads": {
-                "type": "integer",
-                "exclusive_minimum": 0
-              },
-              "dropout": {
-                "type": "number",
-                "minimum": 0,
-                "exclusive_maximum": 1
-              }
-            }
-          },
-          "configure_cpu": {
-            "type": "object",
-            "properties": {
-              "threads": {
-                "type": "integer",
-                "exclusive_minimum": 0
-              }
-            }
-          }
-        }
-      },
-      "runtime": {
-        "type": "object",
-        "properties": {
-          "feedforward_multiplier": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          },
-          "max_inter_op_threads": {
-            "type": "integer",
-            "exclusive_minimum": 0
-          }
-        }
-      }
-    }
-  },
   "content_safety": {
     "type": "object",
     "properties": {
       "secret_content": {
         "type": "string"
-      }
-    }
-  },
-  "prompts": {
-    "type": "object",
-    "properties": {
-      "resolve_service_hint": {
-        "type": "string"
-      },
-      "risk_phrases": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        },
-        "min_items": 1
-      },
-      "safe_phrases": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        },
-        "min_items": 1
-      },
-      "check_cves": {
-        "type": "string"
-      },
-      "risk_phrases_banner": {
-        "type": "string"
-      },
-      "safe_phrases_banner": {
-        "type": "string"
-      },
-      "answer_prefix": {
-        "type": "string"
-      }
-    }
-  },
-  "tensorflow": {
-    "type": "object",
-    "properties": {
-      "cpp_min_log_level": {
-        "type": "integer",
-        "minimum": 0,
-        "maximum": 3
-      }
-    }
-  },
-  "benchmark": {
-    "type": "object",
-    "properties": {
-      "cli": {
-        "type": "object",
-        "properties": {
-          "checkpoint": {
-            "type": "string"
-          },
-          "output": {
-            "type": "string"
-          },
-          "threads": {
-            "type": "integer",
-            "minimum": 1
-          }
-        }
-      },
-      "generation": {
-        "type": "object",
-        "properties": {
-          "max_new": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "temperature": {
-            "type": "number",
-            "exclusive_minimum": 0,
-            "maximum": 2
-          },
-          "seed": {
-            "type": "integer",
-            "minimum": 0
-          }
-        }
-      },
-      "tasks": {
-        "type": "array",
-        "min_items": 1,
-        "items": {
-          "type": "object",
-          "properties": {
-            "name": {
-              "type": "string"
-            },
-            "prompt": {
-              "type": "string"
-            },
-            "cases": {
-              "type": "array",
-              "min_items": 1,
-              "items": {
-                "type": "object",
-                "properties": {
-                  "args": {
-                    "type": "array",
-                    "items": {
-                      "type": [
-                        "integer",
-                        "number",
-                        "boolean",
-                        "string",
-                        "null"
-                      ]
-                    }
-                  },
-                  "expected": {
-                    "type": [
-                      "integer",
-                      "number",
-                      "boolean",
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "raises": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        }
       }
     }
   },
@@ -714,72 +162,6 @@
           },
           "log_dir": {
             "type": "string"
-          },
-          "file_limit": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "metrics_limit": {
-            "type": "integer",
-            "minimum": 1
-          }
-        }
-      },
-      "limits": {
-        "type": "object",
-        "properties": {
-          "steps": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "batch": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "threads": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "max_new": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "samples": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "prompt_chars": {
-            "type": "integer",
-            "minimum": 1
-          }
-        }
-      },
-      "profiles": {
-        "type": "array",
-        "min_items": 1,
-        "items": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string"
-            },
-            "label": {
-              "type": "string"
-            },
-            "corpus": {
-              "type": "string"
-            },
-            "out": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "profile_aliases": {
-        "type": "object",
-        "properties": {
-          "seguranca": {
-            "type": "string"
           }
         }
       }
@@ -788,33 +170,6 @@
   "security_tools": {
     "type": "object",
     "properties": {
-      "cli": {
-        "type": "object",
-        "properties": {
-          "threads": {
-            "type": "integer",
-            "minimum": 1
-          }
-        }
-      },
-      "generation": {
-        "type": "object",
-        "properties": {
-          "max_new": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "temperature": {
-            "type": "number",
-            "exclusive_minimum": 0,
-            "maximum": 2
-          },
-          "seed": {
-            "type": "integer",
-            "minimum": 0
-          }
-        }
-      },
       "runtime": {
         "type": "object",
         "properties": {
@@ -960,31 +315,6 @@
       }
     }
   },
-  "tfds": {
-    "type": "object",
-    "properties": {
-      "source_file": {
-        "type": "string"
-      },
-      "download_dir": {
-        "type": "string"
-      },
-      "sources": {
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "dataset": {
-              "type": "string"
-            },
-            "out": {
-              "type": "string"
-            }
-          }
-        }
-      }
-    }
-  },
   "scraping": {
     "type": "object",
     "properties": {
@@ -1024,122 +354,6 @@
             "type": "number",
             "exclusive_minimum": 0,
             "maximum": 30
-          }
-        }
-      }
-    }
-  },
-  "tfds_text": {
-    "type": "object",
-    "properties": {
-      "runtime": {
-        "type": "object",
-        "properties": {
-          "min_text_length": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "max_records_per_split": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "validation_fraction": {
-            "type": "number",
-            "exclusive_minimum": 0,
-            "exclusive_maximum": 1
-          }
-        }
-      },
-      "prompts": {
-        "type": "object",
-        "properties": {
-          "dolly": {
-            "type": "string"
-          },
-          "squad": {
-            "type": "string"
-          },
-          "natural_instructions": {
-            "type": "string"
-          },
-          "opus": {
-            "type": "string"
-          },
-          "unanswerable": {
-            "type": "string"
-          }
-        }
-      }
-    }
-  },
-  "instruction_train": {
-    "type": "object",
-    "properties": {
-      "paths": {
-        "type": "object",
-        "properties": {
-          "consumed_hashes": {
-            "type": "string"
-          }
-        }
-      },
-      "limits": {
-        "type": "object",
-        "properties": {
-          "max_examples": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "max_line_chars": {
-            "type": "integer",
-            "minimum": 100
-          }
-        }
-      },
-      "curriculum": {
-        "type": "object",
-        "properties": {
-          "stages": {
-            "type": "array",
-            "min_items": 1,
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      }
-    }
-  },
-  "model_quality_cases": {
-    "type": "object",
-    "properties": {
-      "cases": {
-        "type": "array",
-        "min_items": 1,
-        "items": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string"
-            },
-            "tool": {
-              "type": "string"
-            },
-            "target": {
-              "type": "string"
-            },
-            "goal": {
-              "type": "string"
-            },
-            "expected": {
-              "type": "string"
-            },
-            "expected_args": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
           }
         }
       }
@@ -1292,22 +506,6 @@
       }
     }
   },
-  "setup_ollama_rag": {
-    "type": "object",
-    "properties": {
-      "ollama_model": {
-        "type": "string"
-      },
-      "embedding_model_id": {
-        "type": "string"
-      },
-      "startup_timeout_seconds": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 600
-      }
-    }
-  },
   "assistant": {
     "type": "object",
     "properties": {
@@ -1357,6 +555,66 @@
       },
       "analysis_question": {
         "type": "string"
+      },
+      "default_ports": {
+        "type": "array",
+        "min_items": 1,
+        "items": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      },
+      "default_tool": {
+        "type": "string"
+      },
+      "nmap_args": {
+        "type": "array",
+        "min_items": 1,
+        "items": {
+          "type": "string"
+        }
+      },
+      "nmap_timeout_seconds": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 600
+      },
+      "nmap_max_output_bytes": {
+        "type": "integer",
+        "minimum": 1024,
+        "maximum": 10000000
+      },
+      "max_report_bytes": {
+        "type": "integer",
+        "minimum": 1024,
+        "maximum": 16000000
+      }
+    }
+  },
+  "corpus": {
+    "type": "object",
+    "properties": {
+      "ext": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "skip_dirs": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "skip_name": {
+        "type": "string"
+      },
+      "skip_files": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
       }
     }
   }

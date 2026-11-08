@@ -1,0 +1,27 @@
+{
+  "ext": [
+    ".json",
+    ".md",
+    ".py",
+    ".sh",
+    ".txt",
+    ".yaml",
+    ".yml"
+  ],
+  "skip_dirs": [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+    "venv"
+  ],
+  "skip_name": "(\\.env|secret|credential|private|id_rsa|\\.pem$|\\.key$|token|password)",
+  "skip_files": [
+    "import_report.json",
+    "import_state.json",
+    "manifest.json",
+    "scraping_state.json"
+  ]
+}

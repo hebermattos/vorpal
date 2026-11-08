@@ -1,9 +1,0 @@
-{
-  "cli": {
-    "samples": 50,
-    "threads": 4,
-    "data": "data/valid.bin",
-    "checkpoint": "checkpoints/latest.keras"
-  },
-  "seed": 123
-}

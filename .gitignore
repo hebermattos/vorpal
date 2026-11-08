@@ -2,10 +2,7 @@
 __pycache__/
 *.pyc
 data/
-checkpoints/
-*.pt
-*.keras
-*.weights.h5
+models/
 corpus/imported/
 .pytest_cache/
 scans/

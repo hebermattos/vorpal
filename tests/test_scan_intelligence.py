@@ -58,6 +58,10 @@ class ScanIntelligenceTests(unittest.TestCase):
         with self.assertRaises(si.AnalysisError):
             si.parse_nmap(b'<!DOCTYPE nmaprun [<!ENTITY x SYSTEM "file:///etc/passwd">]><nmaprun/>', self.target)
 
+    def test_standard_inert_nmap_declaration_is_accepted(self):
+        raw = NMAP.replace(b'<nmaprun>', b'<!DOCTYPE nmaprun><nmaprun>', 1)
+        self.assertEqual(si.parse_nmap(raw, self.target)[0]['service'], 'http')
+
     def test_nuclei_filters_other_hosts(self):
         payload = "\n".join([
             json.dumps({"matched-at": "http://192.168.1.10/", "template-id": "server-header",

@@ -1,7 +1,7 @@
-"""Local document retrieval, isolated from training data and security execution.
+"""Local corpus retrieval with bounded text import and optional CPU embeddings.
 
-Indexing reads existing UTF-8 corpus/imported text only. It does not fetch URLs,
-run tools, modify training splits, or load the Vorpal generation checkpoint.
+Indexing reads existing UTF-8 documents. It does not download sources, run tools
+or modify the local chat model's weights.
 """
 from __future__ import annotations
 
@@ -16,11 +16,11 @@ import sqlite3
 try:
     from .config import load_config
     from .content_safety import SECRET_CONTENT
-    from .data import EXT, SKIP_DIRS, SKIP_NAME, is_internal_file
+    from .corpus_policy import EXT, SKIP_DIRS, SKIP_NAME, is_internal_file
 except ImportError:
     from config import load_config
     from content_safety import SECRET_CONTENT
-    from data import EXT, SKIP_DIRS, SKIP_NAME, is_internal_file
+    from corpus_policy import EXT, SKIP_DIRS, SKIP_NAME, is_internal_file
 
 SETTINGS = load_config("rag")
 TOKEN = re.compile(r"\w+", re.UNICODE)

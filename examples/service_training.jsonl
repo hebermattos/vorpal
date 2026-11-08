@@ -1,2 +1,0 @@
-{"task": "resolve_service_hint", "input": {"port": 22, "banner": "SSH-2.0-example"}, "output": {"service": "ssh", "note": "Verify authentication and network access controls."}}
-{"task": "check_cves", "input": {"banner": "SSH-2.0-example"}, "output": {"cves": []}}

@@ -1,5 +1,4 @@
-# Default Ollama + RAG workflow; TensorFlow training is optional.
-numpy>=1.26,<3
+# Local Ollama + RAG corpus import dependencies.
 pypdf>=5,<7
 fonttools>=4,<5
 python-docx>=1.1,<2

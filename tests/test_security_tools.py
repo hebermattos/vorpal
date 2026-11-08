@@ -92,28 +92,22 @@ class SecurityToolTests(unittest.TestCase):
             with self.subTest(response=response), self.assertRaises(ToolPlanError):
                 tools.proposal_from_response('nmap', '127.0.0.1', 'goal', response)
 
-    def test_model_is_called_for_planning_and_no_process_is_started(self):
-        model = SimpleNamespace(get_layer=lambda name: SimpleNamespace(input_dim=256))
-        with patch('generate.generate') as generate, patch.object(tools.subprocess, 'Popen') as process:
-            generate.side_effect = lambda model, prompt, **kwargs: prompt + json.dumps({'args': ['-p', '8080'], 'reason': 'Inspect the requested port.'})
-            plan = tools.propose('nmap', '127.0.0.1', 'Inspect the local web port', model=model)
-            self.assertEqual(plan['args'], ['-p', '8080'])
-            self.assertTrue(generate.call_args.kwargs['stop_on_json'])
-            self.assertIn('Inspect the local web port', generate.call_args.args[1])
-            process.assert_not_called()
-            generate.side_effect = lambda model, prompt, **kwargs: prompt + 'incoherent output'
-            with self.assertRaises(ToolPlanError) as error:
-                tools.propose('nmap', '127.0.0.1', 'goal', model=model)
-            self.assertEqual(error.exception.response, 'incoherent output')
-            process.assert_not_called()
-
-    def test_prompt_keeps_instruction_and_reports_truncation_for_small_context(self):
-        prompt, used = tools.planning_prompt('nuclei', 'http://127.0.0.1:8080', 'a' * 1000, 256)
-        self.assertLessEqual(len(prompt.encode()), 256)
-        self.assertTrue(prompt.startswith(self.settings['planner']['instruction']))
-        self.assertLess(len(used), 1000)
-        with self.assertRaises(ToolPlanError):
-            tools.planning_prompt('nmap', '127.0.0.1', 'goal', 4)
+    def test_ollama_rag_planning_does_not_start_a_process(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / 'index.sqlite3'
+            database.touch()
+            client = Mock(return_value=json.dumps({'args': ['-p', '8080'], 'reason': 'Inspect the requested port.'}))
+            docs = [{'source': 'nmap.txt', 'line': 1, 'sha256': 'a' * 64, 'text': 'Use -p for selected ports.'}]
+            with patch('rag.search', return_value=docs), patch.object(tools.subprocess, 'Popen') as process:
+                plan = tools.propose('nmap', '127.0.0.1', 'Inspect the local web port', database=database, client=client)
+                self.assertEqual(plan['args'], ['-p', '8080'])
+                self.assertEqual(plan['sources'][0]['source'], 'nmap.txt')
+                self.assertIn('references', client.call_args.args[0][1]['content'])
+                process.assert_not_called()
+                client.return_value = 'incoherent output'
+                with self.assertRaises(ToolPlanError):
+                    tools.propose('nmap', '127.0.0.1', 'goal', database=database, client=client)
+                process.assert_not_called()
 
     def test_execution_requires_authorization_and_unchanged_reviewed_digest(self):
         plan = self.plan()
@@ -144,7 +138,7 @@ class SecurityToolTests(unittest.TestCase):
             with self.assertRaises(ToolPlanError):
                 tools.read_plan('../../outside', root=root)
 
-    def test_reviewed_training_examples_use_the_real_planner_format(self):
+    def test_reviewed_corpus_examples_use_the_real_planner_format(self):
         paths = [path for tool in ('nmap', 'nuclei') for path in (tools.ROOT / 'corpus/tools' / tool / 'examples').glob('*.txt')]
         self.assertEqual(len(paths), 12)
         for path in paths:
@@ -169,20 +163,3 @@ class SecurityToolTests(unittest.TestCase):
             self.assertEqual(report['status'], 'timed_out')
             self.assertNotEqual(report['returncode'], 0)
             self.assertIn('owned timeout fixture', report['output'])
-
-    def test_json_generation_stops_at_complete_object(self):
-        import numpy as np
-        from generate import generate
-        payload = b'{"args":[],"reason":"test"}ignored'
-        class Model:
-            index = 0
-            def get_layer(self, name): return SimpleNamespace(input_dim=256)
-            def __call__(self, batch, training=False):
-                logits = np.full((1, batch['tokens'].shape[1], 256), -1e6, dtype=np.float32)
-                logits[0, -1, payload[self.index]] = 1e6
-                self.index += 1
-                return SimpleNamespace(numpy=lambda: logits)
-        model = Model()
-        result = generate(model, 'Answer: ', max_new=len(payload), stop_on_json=True)
-        self.assertEqual(result, 'Answer: {"args":[],"reason":"test"}')
-        self.assertLess(model.index, len(payload))

@@ -41,7 +41,6 @@ class KnowledgeTests(unittest.TestCase):
             self.assertEqual(first["index"]["documents"], 1)
             self.assertEqual(first["index"]["sqlite_integrity"], "ok")
             self.assertFalse(first["index"]["retrieval_quality_tested"])
-            self.assertFalse(first["training_started"])
             self.assertFalse(first["scan_started"])
             self.assertTrue((self.project / first["report"]).is_file())
             second = self.run_update()

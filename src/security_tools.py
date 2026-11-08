@@ -251,40 +251,34 @@ def proposal_from_response(tool, target, goal, response, *, settings=None, root=
     return plan
 
 
-def planning_prompt(tool, target, goal, context, *, settings=None):
-    settings = _settings(settings)
-    prefix = settings['planner']['instruction'] + settings['planner'][tool]
-    suffix = settings['planner']['answer_prefix']
-    used_goal = goal
-    while True:
-        prompt = prefix + json.dumps({'target': target, 'goal': used_goal}, ensure_ascii=False) + suffix
-        if len(prompt.encode('utf-8')) <= context:
-            return prompt, used_goal
-        if not used_goal:
-            raise ToolPlanError('The checkpoint context is too short for the planning format.')
-        used_goal = used_goal[:-1]
-
-
-def propose(tool, target, goal, *, model=None, settings=None, root=ROOT):
+def propose(tool, target, goal, *, settings=None, root=ROOT, client=None, database=None):
+    """Use local Ollama + RAG to propose arguments, never execute them."""
     settings = _settings(settings)
     target = validate_target(tool, target)
     if not isinstance(goal, str) or not goal.strip() or len(goal) > settings['runtime']['max_goal_chars'] or not goal.isprintable():
         raise ToolPlanError('Enter a short, single-line goal.')
-    if model is None:
-        raise ToolPlanError('A trained checkpoint is required to propose commands.')
-    context = model.get_layer('position_embedding').input_dim
-    prompt, used_goal = planning_prompt(tool, target, goal, context, settings=settings)
     try:
-        from .generate import generate
+        from . import rag, scan_intelligence
     except ImportError:
-        from generate import generate
-    output = generate(model, prompt, **settings['generation'], stop_on_json=True, json_mode=True)
-    response = output[len(prompt):]
+        import rag, scan_intelligence
+    path = Path(database or load_config('rag')['database'])
+    if not path.is_file():
+        raise ToolPlanError('RAG index is required. Run: python vorpal.py knowledge update')
+    model_settings = load_config('scan_intelligence')
+    docs = rag.search(tool + ' ' + goal, path, limit=model_settings['rag_results'])
+    if not docs:
+        raise ToolPlanError('RAG returned no relevant tool documentation.')
+    context = [{'id': i, 'source': doc['source'], 'text': doc['text'][:model_settings['max_excerpt_chars']]}
+               for i, doc in enumerate(docs, 1)]
+    response = (client or scan_intelligence._local_chat)([
+        {'role': 'system', 'content': settings['planner']['instruction'] + settings['planner'][tool]},
+        {'role': 'user', 'content': json.dumps({'target': target, 'goal': goal, 'references': context})}
+    ], model_settings)
     try:
         plan = proposal_from_response(tool, target, goal, response, settings=settings, root=root)
     except ToolPlanError as exc:
         raise ToolPlanError(str(exc), response=response) from exc
-    plan.update(goal_used=used_goal, goal_truncated=used_goal != goal, model_response=response)
+    plan.update(model_response=response, sources=[{k: doc[k] for k in ('source', 'line', 'sha256')} for doc in docs])
     return plan
 
 
@@ -415,8 +409,7 @@ def main():
     planner.add_argument('--tool', choices=tuple(settings['tools']), required=True)
     planner.add_argument('--target', required=True)
     planner.add_argument('--goal', required=True)
-    planner.add_argument('--checkpoint', default=load_config('train')['policy']['checkpoint'])
-    planner.add_argument('--threads', type=int, default=settings['cli']['threads'])
+    planner.add_argument('--rag-db')
     runner = modes.add_parser('run', help='Execute only a previously reviewed plan')
     runner.add_argument('--plan-id', required=True)
     runner.add_argument('--digest', required=True)
@@ -431,14 +424,7 @@ def main():
         if not isinstance(args.goal, str) or not args.goal.strip() or len(args.goal) > settings['runtime']['max_goal_chars'] or not args.goal.isprintable():
             raise ToolPlanError('Invalid goal.')
         try:
-            from .model import configure_cpu
-        except ImportError:
-            from model import configure_cpu
-        from tensorflow import keras
-        configure_cpu(args.threads)
-        model = keras.models.load_model(args.checkpoint, compile=False)
-        try:
-            plan = propose(args.tool, target, args.goal, model=model, settings=settings)
+            plan = propose(args.tool, target, args.goal, database=args.rag_db, settings=settings)
         except (ToolPlanError, RuntimeError) as exc:
             plan = {'status': 'rejected', 'tool': args.tool, 'target': target, 'goal': args.goal,
                     'error': str(exc), 'model_response': getattr(exc, 'response', None)}

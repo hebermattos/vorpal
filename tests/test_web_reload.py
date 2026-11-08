@@ -14,14 +14,14 @@ class ReloadTests(unittest.TestCase):
     def test_revision_tracks_sources_and_ignores_runtime_outputs(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            for directory in ('src', 'config', 'web', 'checkpoints'):
+            for directory in ('src', 'config', 'web', 'data'):
                 (root / directory).mkdir()
             (root / 'src/example.py').write_text('x = 1')
             (root / 'config/example.json').write_text('{}')
             (root / 'web/app.js').write_text('initial')
             backend = source_revision(root)
             frontend = source_revision(root, frontend=True)
-            (root / 'checkpoints/latest.keras').write_bytes(b'runtime')
+            (root / 'data/index.sqlite3').write_bytes(b'runtime')
             self.assertEqual(source_revision(root), backend)
             (root / 'web/app.js').write_text('changed frontend')
             self.assertEqual(source_revision(root), backend)

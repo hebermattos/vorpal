@@ -40,6 +40,8 @@ def _read(path, size):
 
 def parse_nmap(raw, target):
     """Extract only bounded service facts from Nmap XML, never scripts or commands."""
+    # Accept Nmap's inert standard declaration without enabling DTD processing.
+    raw = raw.replace(b'<!DOCTYPE nmaprun>', b'', 1)
     if b"<!DOCTYPE" in raw.upper() or b"<!ENTITY" in raw.upper():
         raise AnalysisError("DTD and XML entities are not accepted.")
     try:
@@ -111,7 +113,7 @@ def parse_nuclei(raw, target, maximum):
 
 
 def _local_chat(messages, settings):
-    """Use a loopback-only llama.cpp OpenAI-compatible server, no remote API."""
+    """Call the configured, independently managed Ollama-compatible service."""
     host = settings.get('host', '127.0.0.1')
     if host not in {'127.0.0.1', 'localhost'}:
         raise AnalysisError('Local inference requires a loopback host.')
@@ -132,7 +134,8 @@ def _local_chat(messages, settings):
         result = json.loads(data)
         return result["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError, ValueError, urllib.error.URLError, TimeoutError) as exc:
-        raise AnalysisError(f"Local LLM unavailable or invalid response: {exc}") from exc
+        raise AnalysisError(f"External Ollama service unavailable or invalid response at {endpoint} "
+                            f"(model {settings['model']}). Check config/scan_intelligence.json: {exc}") from exc
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):

@@ -9,51 +9,6 @@
     "max_output_chars": 100000,
     "max_request_bytes": 1048576,
     "stop_grace_seconds": 5,
-    "log_dir": "logs/web",
-    "file_limit": 200,
-    "metrics_limit": 200
-  },
-  "limits": {
-    "steps": 100000,
-    "batch": 256,
-    "threads": 64,
-    "max_new": 4096,
-    "samples": 10000,
-    "prompt_chars": 8192
-  },
-  "profiles": [
-    {
-      "id": "complete",
-      "label": "Complete corpus",
-      "corpus": "corpus",
-      "out": "data"
-    },
-    {
-      "id": "security",
-      "label": "Security",
-      "corpus": "corpus/security",
-      "out": "data/security"
-    },
-    {
-      "id": "python",
-      "label": "Python",
-      "corpus": "corpus/python",
-      "out": "data/python"
-    },
-    {
-      "id": "nmap",
-      "label": "Tool \u00b7 Nmap",
-      "corpus": "corpus/tools/nmap",
-      "out": "data/tools/nmap"
-    },
-    {
-      "id": "nuclei",
-      "label": "Tool \u00b7 Nuclei",
-      "corpus": "corpus/tools/nuclei",
-      "out": "data/tools/nuclei"
-    }
-  ],
-  "profile_aliases": {
-    "seguranca": "security"
+    "log_dir": "logs/web"
   }
 }
