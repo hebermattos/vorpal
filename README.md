@@ -216,6 +216,42 @@ does not prevent analysis but leaves the response without documentation citation
 verify such suggestions independently. No network request is made to scanner
 targets by this analysis module.
 
+## Knowledge updates (no model training)
+
+The Knowledge Manager updates the **existing local RAG corpus** and writes an
+incremental JSON audit report. It does not change TensorFlow checkpoints,
+training history, splits or GGUF model weights.
+
+```bash
+# Default: index already available local UTF-8 corpus files, no source downloads
+python vorpal.py knowledge update
+
+# Opt in to the existing importer (local files, URL lists and bounded scraping
+# according to existing source configuration; this may access public websites)
+python vorpal.py knowledge update --import-sources
+
+# Optional: use a previously installed local embedding model
+python vorpal.py knowledge update --hybrid
+```
+
+Defaults live in `config/knowledge.json`: `corpus` is the **entire**
+`corpus/` tree and the index is `data/rag/index.sqlite3`. Do not reuse the
+same database with a different corpus: the command checks the index root
+before updating to prevent accidental removal of other categories.
+
+Each update compares document hashes and reports added, updated and removed
+sources, current document/chunk counts, and SQLite integrity. Run reports are
+saved in `logs/knowledge/update_*.json`. Already indexed content is reused;
+the command does not claim retrieval relevance or model improvements. The
+`--import-sources` flag uses existing import history and retries failures.
+Previously accepted URL entries are **not automatically re-fetched**.
+
+Updating RAG only changes the evidence retrieved during Mode 2 analysis;
+it **does not fine-tune the local llama.cpp model** or start Vorpal's Keras
+training pipeline. Source content is still untrusted and secret filtering is
+heuristic. The update command may use the network only with
+`--import-sources`, so review your corpus URL/scraping lists beforehand.
+
 ## Local retrieval (RAG)
 
 Vorpal can now index **existing UTF-8 corpus files and imported text** separately from

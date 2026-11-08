@@ -1271,5 +1271,22 @@
         "type": "string"
       }
     }
+  },
+  "knowledge": {
+    "type": "object",
+    "properties": {
+      "corpus": {
+        "type": "string"
+      },
+      "database": {
+        "type": "string"
+      },
+      "imported_subdir": {
+        "type": "string"
+      },
+      "report_dir": {
+        "type": "string"
+      }
+    }
   }
 }
