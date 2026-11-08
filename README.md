@@ -236,6 +236,30 @@ Defaults, prompts and restriction policies live in `config/`. CLI options overri
 
 Generated import caches, local PDF folders, `data/`, `checkpoints/`, `logs/` and `reports/` are ignored by Git. Local PDFs are not included in a fresh clone. Legacy PyTorch checkpoints cannot be loaded or automatically converted to Keras.
 
+## Optional supervised instruction fine-tuning
+
+The default autoregressive training mode remains unchanged. To specialize an existing
+checkpoint for reviewed scanner planning, use the **same training entry point**:
+
+```bash
+python src/train.py --instruction-examples examples/planner_instructions.jsonl --steps 100 --threads 4
+```
+
+This mode requires the existing shared Keras checkpoint and matching architecture. It does
+not import source data, execute scanners, reset the model, or change existing binary datasets.
+It uses response-only loss masking (prompt/padding positions carry zero weight), and separately
+tracks consumed training examples at `data/instructions/training_state.json`. Use `--replay`
+to train previously consumed instruction examples again. `--reset` is not supported in
+instruction mode. Normal training and instruction training should not run concurrently.
+
+Each line of the reviewed JSONL contains exactly `tool`, `target`, `goal`, `args`,
+`reason`, and `split` (`train`, `validation`, or `test`). Local targets and flags
+are validated against the same deterministic planner policy. Validation/test records are
+**never** used in instruction training. Examples too long for the checkpoint's byte
+context are rejected; the script never truncates training intent. This is a small teaching
+set, not a measured improvement in model quality. Keep functional benchmark fixtures
+separate from instruction training examples and benchmark the resulting checkpoint.
+
 ## Tests and further details
 
 ```bash
