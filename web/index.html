@@ -9,8 +9,10 @@
           <div class="field"><label for="analysis-tool">Evidence tool</label><select id="analysis-tool" name="tool"><option value="">Configured default</option><option value="nmap">Nmap (service identification)</option><option value="tcp">Built-in TCP (passive banners)</option></select></div>
           <div class="field"><label for="analysis-target">Authorized IPv4 target</label><input id="analysis-target" name="target" placeholder="192.168.1.10" required autocomplete="off"></div>
           <div class="field"><label for="analysis-ports">TCP ports (optional)</label><input id="analysis-ports" name="ports" placeholder="22,80,443"><small>Leave empty to use the configured common ports.</small></div>
+          <div class="field"><label for="analysis-goal">Nmap security objective (optional)</label><input id="analysis-goal" name="goal" maxlength="1024" placeholder="Identify SSH and web service versions with low-impact probes"></div>
           <label class="tool-authorization"><input id="analysis-authorized" type="checkbox" required><span>I am authorized to connect to this exact target.</span></label>
-          <button class="button primary full-width job-trigger" type="submit">Analyze IP with Ollama + RAG</button>
+          <button id="analyze-ip-button" class="button primary full-width job-trigger" type="submit">Analyze IP with Ollama + RAG</button>
+          <div id="command-review" hidden><h3>Review the generated command</h3><pre id="proposed-command" class="assistant-transcript"></pre><p id="proposed-reason"></p><pre id="proposed-sources" class="assistant-transcript"></pre><label><input id="command-reviewed" type="checkbox"> I reviewed this exact command and authorize its execution against the selected target.</label><p id="command-review-status" role="status"></p><button id="run-reviewed-analysis" class="button primary full-width job-trigger" type="button" disabled>Run reviewed command and analyze ports</button></div>
           <pre id="ip-analysis-result" class="assistant-transcript" aria-live="polite">No analysis yet.</pre>
           <button id="discuss-analysis" class="button secondary" type="button" disabled>Discuss this report in chat</button>
           <div class="field"><label><input id="assistant-import-sources" type="checkbox"> Import configured URLs, scraping sources and PDFs</label></div>

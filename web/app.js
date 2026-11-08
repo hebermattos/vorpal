@@ -3,6 +3,7 @@ const $ = selector => document.querySelector(selector);
 let state = null, selectedJob = null, chatSession = null, chatReport = null;
 let completedAnalysis = null, chatBusy = false, submitting = false, currentConfig = null;
 let devRevision = null;
+let pendingPlan = null, shownPlan = null;
 function text(selector, value) { $(selector).textContent = value; }
 function error(message = '') { text('#error-banner', message); $('#error-banner').hidden = !message; }
 async function api(path, options = {}) {
@@ -28,6 +29,10 @@ function busy() {
   $('#new-conversation').disabled = chatBusy;
   $('#discuss-analysis').disabled = chatBusy || !completedAnalysis;
   $('#cancel-job-button').disabled = !active;
+  $('#run-reviewed-analysis').disabled = !state || Boolean(active) || submitting || chatBusy || !pendingPlan || !$('#command-reviewed').checked || !$('#analysis-authorized').checked;
+  const nmap = ($('#analysis-tool').value || state?.default_tool) === 'nmap';
+  text('#analyze-ip-button', nmap ? 'Generate Nmap command for review' : 'Analyze TCP ports with Ollama + RAG');
+  $('#analysis-goal').disabled = !nmap;
 }
 function sources(items) { return items.map(s => `[${s.id}] ${s.source}:${s.line}`).join('\n'); }
 async function updateJob() {
@@ -41,6 +46,24 @@ async function updateJob() {
     if (job.status === 'completed') {
       try {
         const report = JSON.parse(job.output);
+        if (report.status === 'command_review_required') {
+          if (shownPlan !== report.plan_id) {
+            shownPlan = report.plan_id; pendingPlan = report;
+            $('#analysis-tool').value = 'nmap';
+            $('#analysis-target').value = report.target;
+            $('#analysis-ports').value = report.selected_ports.join(',');
+            $('#analysis-goal').value = report.goal;
+            $('#analysis-authorized').checked = false;
+            $('#command-reviewed').checked = false;
+            $('#command-review').hidden = false;
+            text('#proposed-command', report.command);
+            text('#proposed-reason', report.reason);
+            text('#proposed-sources', report.sources.map(s => `${s.source}:${s.line}`).join('\n'));
+            text('#command-review-status', 'No scan has run. Review the command and confirm authorization to execute it.');
+          }
+          text('#ip-analysis-result', 'Command generated. Awaiting review before evidence collection.');
+          return;
+        }
         completedAnalysis = report.report_id;
         const ports = (report.port_analyses || []).map(p => {
           const service = p.evidence?.service || p.evidence?.service_hint || '';
@@ -97,9 +120,25 @@ async function startJob(action, params) {
   finally { submitting = false; busy(); }
 }
 $('#ip-analysis-form').addEventListener('submit', event => {
-  event.preventDefault(); completedAnalysis = null;
+  event.preventDefault(); completedAnalysis = null; pendingPlan = null; $('#command-review').hidden = true;
   const params = {target: $('#analysis-target').value.trim(), ports: $('#analysis-ports').value.trim(), authorized: $('#analysis-authorized').checked};
   if ($('#analysis-tool').value) params.tool = $('#analysis-tool').value;
+  if (!$('#analysis-goal').disabled && $('#analysis-goal').value.trim()) params.goal = $('#analysis-goal').value.trim();
+  startJob('analyze_ip', params);
+});
+for (const id of ['analysis-tool', 'analysis-target', 'analysis-ports', 'analysis-goal']) {
+  $(`#${id}`).addEventListener('input', () => {
+    if (pendingPlan) text('#command-review-status', 'Inputs changed. Generate and review a new command.');
+    pendingPlan = null; $('#command-reviewed').checked = false; busy();
+  });
+}
+$('#command-reviewed').addEventListener('change', busy);
+$('#analysis-authorized').addEventListener('change', busy);
+$('#run-reviewed-analysis').addEventListener('click', () => {
+  if (!pendingPlan || !$('#command-reviewed').checked || !$('#analysis-authorized').checked) return;
+  const params = {target: $('#analysis-target').value.trim(), ports: $('#analysis-ports').value.trim(),
+    tool: 'nmap', authorized: true, plan_id: pendingPlan.plan_id, digest: pendingPlan.digest};
+  pendingPlan = null; $('#command-review').hidden = true;
   startJob('analyze_ip', params);
 });
 $('#assistant-update-knowledge').addEventListener('click', () => startJob('knowledge_update', {import_sources: $('#assistant-import-sources').checked}));

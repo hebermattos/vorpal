@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 import secrets
+import shlex
 import socket
 import sys
 import threading
@@ -197,7 +198,19 @@ def analyze_ports(report, report_path, *, database, settings, client=None):
         raise ValueError(f"No open port could be assessed: {failed[0]['error']}")
 
 
-def analyze_ip(target, *, authorized=False, ports=None, tool=None, database=None, root=ROOT, client=None):
+def validate_plan_scope(plan, target, selected):
+    if plan['tool'] != 'nmap' or plan['target'] != target or '-p' not in plan['args']:
+        raise ValueError('The proposal must use Nmap with the exact target and explicit selected ports.')
+    planned = ports_from_text(plan['args'][plan['args'].index('-p') + 1])
+    if planned != selected:
+        raise ValueError('The proposal changed the selected port scope. Generate a new command.')
+    missing = set(load_config('assistant')['nmap_required_flags']) - set(plan['args'])
+    if missing:
+        raise ValueError('The proposal lacks required evidence capabilities: ' + ', '.join(sorted(missing)))
+
+
+def analyze_ip(target, *, authorized=False, ports=None, tool=None, goal=None, plan_id=None, digest=None,
+               database=None, root=ROOT, client=None):
     if authorized is not True:
         raise ValueError('Explicit authorization is required before connecting to a target.')
     target = security_tools.validate_target('nmap', target)
@@ -210,6 +223,42 @@ def analyze_ip(target, *, authorized=False, ports=None, tool=None, database=None
     # Verify retrieval before making any target connection.
     if not rag.search(settings['fallback_query'], path, limit=1):
         raise ValueError('RAG has no network security references. Update the corpus before scanning.')
+    reviewed_argv = None
+    if tool == 'nmap':
+        if plan_id is None:
+            if digest is not None:
+                raise ValueError('A digest requires the reviewed plan ID.')
+            goal = goal or settings['planning_goal']
+            feedback = None
+            for attempt in range(settings['planning_attempts']):
+                try:
+                    plan = security_tools.propose('nmap', target, goal, root=root, database=path, client=client,
+                                                 constraints={'ports': selected, 'explicit_ports_required': True,
+                                                              'required_flags': settings['nmap_required_flags']}, feedback=feedback)
+                    validate_plan_scope(plan, target, selected)
+                    break
+                except (security_tools.ToolPlanError, ValueError) as exc:
+                    if attempt + 1 == settings['planning_attempts']:
+                        raise
+                    feedback = str(exc)
+            plan['planning_attempts'] = attempt + 1
+            plan = security_tools.write_report(plan, 'plans', root=root)
+            execution = [sys.executable, str(Path(root) / 'vorpal.py'), 'analyze', '--target', target,
+                         '--tool', 'nmap', '--ports', ','.join(map(str, selected)), '--authorized',
+                         '--plan-id', plan['id'], '--digest', plan['digest'], '--rag-db', str(path.resolve())]
+            return {'status': 'command_review_required', 'tool': tool, 'target': target, 'selected_ports': selected,
+                    'goal': goal, 'command': plan['command'], 'argv': plan['argv'], 'reason': plan['reason'],
+                    'plan_id': plan['id'], 'digest': plan['digest'], 'sources': plan['sources'],
+                    'planning_attempts': plan['planning_attempts'],
+                    'execute_after_review': shlex.join(execution),
+                    'automatic_execution': False, 'rag_required': True}
+        plan = security_tools.read_plan(plan_id, root=root)
+        reviewed_argv = security_tools.reviewed_command(plan, digest, authorized=authorized, root=root)
+        validate_plan_scope(plan, target, selected)
+        if goal is not None and goal != plan['goal']:
+            raise ValueError('The goal changed. Generate and review a new command.')
+    elif plan_id is not None or digest is not None or goal is not None:
+        raise ValueError('Command planning and review parameters require --tool nmap.')
     report_id = secrets.token_hex(12)
     report_path = log_directory(root) / f'analysis_{report_id}.json'
     observations = {'target': target, 'selected_ports': selected, 'open_tcp': [], 'unreachable_or_closed': []}
@@ -219,10 +268,11 @@ def analyze_ip(target, *, authorized=False, ports=None, tool=None, database=None
     save_record(report_path, report)
     try:
         if tool == 'nmap':
-            argv = security_tools.build_command('nmap', target, [*settings['nmap_args'], '-p', ','.join(map(str, selected))])
+            argv = reviewed_argv
             xml_path = report_path.with_suffix('.nmap.xml')
             stderr_path = report_path.with_suffix('.nmap.stderr.log')
-            report.update(collector_argv=argv, evidence_files={'nmap_xml': str(xml_path), 'stderr': str(stderr_path)})
+            report.update(collector_argv=argv, plan_id=plan_id, plan_digest=digest, goal=plan['goal'],
+                          evidence_files={'nmap_xml': str(xml_path), 'stderr': str(stderr_path)})
             save_record(report_path, report)
             collectors.run(argv, xml_path, stderr_path, timeout=settings['nmap_timeout_seconds'],
                            max_bytes=settings['nmap_max_output_bytes'], cwd=root)
@@ -266,6 +316,9 @@ def main(argv=None):
     scan.add_argument('--authorized', action='store_true')
     scan.add_argument('--ports')
     scan.add_argument('--tool', choices=('tcp', 'nmap'), help='Evidence collector; default from config/assistant.json')
+    scan.add_argument('--goal', help='Security objective for the model-generated Nmap proposal')
+    scan.add_argument('--plan-id', help='Previously generated command plan to execute after review')
+    scan.add_argument('--digest', help='Digest of the reviewed command')
     scan.add_argument('--rag-db')
     scan.add_argument('--output', help='Optional additional JSON report destination')
     conversation = commands.add_parser('chat', help='Security advice with cited local RAG sources')
@@ -279,7 +332,8 @@ def main(argv=None):
             destination = Path(args.output) if args.output else None
             if destination and destination.is_symlink():
                 raise ValueError('Output must not be a symbolic link.')
-            result = analyze_ip(args.target, authorized=args.authorized, ports=args.ports, tool=args.tool, database=args.rag_db)
+            result = analyze_ip(args.target, authorized=args.authorized, ports=args.ports, tool=args.tool,
+                                goal=args.goal, plan_id=args.plan_id, digest=args.digest, database=args.rag_db)
             if destination:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 save_record(destination, result)

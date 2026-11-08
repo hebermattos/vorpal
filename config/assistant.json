@@ -51,13 +51,14 @@
     27017
   ],
   "default_tool": "tcp",
-  "nmap_args": [
-    "-sT",
-    "-sV",
-    "--version-light",
-    "-Pn"
-  ],
   "nmap_timeout_seconds": 180,
   "nmap_max_output_bytes": 3000000,
-  "max_report_bytes": 8000000
+  "max_report_bytes": 8000000,
+  "planning_goal": "Identify services on the selected TCP ports and collect defensible evidence for security configuration review.",
+  "nmap_required_flags": [
+    "-sT",
+    "-sV",
+    "--version-light"
+  ],
+  "planning_attempts": 2
 }
