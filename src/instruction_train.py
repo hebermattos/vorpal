@@ -97,6 +97,23 @@ def prepare_examples(path, context, *, settings=None):
     return encoded
 
 
+def sample_indices(examples, batch, rng, step, total_steps, *, settings=None):
+    """Deterministic tool-balanced curriculum with graceful single-tool support."""
+    settings = settings or load_config("instruction_train")
+    stages = settings["curriculum"]["stages"]
+    if not stages:
+        raise ValueError("Instruction curriculum must define at least one stage")
+    stage = stages[min(len(stages) - 1, (step * len(stages)) // total_steps)]
+    groups = {}
+    for index, (item, _) in enumerate(examples):
+        groups.setdefault(item["tool"], []).append(index)
+    if stage != "mixed" and stage in groups:
+        return rng.choice(groups[stage], size=batch)
+    tools = sorted(groups)
+    selected_tools = rng.choice(tools, size=batch)
+    return np.array([rng.choice(groups[tool]) for tool in selected_tools], dtype=np.int64)
+
+
 def train_instructions(args, *, checkpoint, metadata, train_settings):
     """Update the shared checkpoint, preserving existing model metadata and optimizer."""
     from tensorflow import keras
@@ -111,7 +128,7 @@ def train_instructions(args, *, checkpoint, metadata, train_settings):
         raise ValueError("Instruction training requires an existing checkpoint; --reset/--prepared are unsupported")
     if not checkpoint.is_file() or not metadata.is_file():
         raise FileNotFoundError("Instruction training requires an existing Keras checkpoint and metadata")
-    if args.batch < 1 or args.steps < 1 or args.threads < 1:
+    if args.batch < 1 or args.steps < 1 or args.threads < 1 or not np.isfinite(args.lr) or args.lr <= 0:
         raise ValueError("Batch, steps and threads must be positive")
     meta = json.loads(metadata.read_text(encoding="utf-8"))
     expected = dict(context=args.context, d_model=args.dim, layers=args.layers,
@@ -145,7 +162,7 @@ def train_instructions(args, *, checkpoint, metadata, train_settings):
     weights = np.stack([arrays[2] for _, arrays in selected])
     initial_step = int(meta["step"])
     for index in range(1, args.steps + 1):
-        chosen = rng.integers(len(selected), size=args.batch)
+        chosen = sample_indices(selected, args.batch, rng, index - 1, args.steps)
         model.reset_metrics()
         loss = float(model.train_on_batch(as_inputs(x[chosen]), y[chosen], sample_weight=weights[chosen]))
         if not np.isfinite(loss):
