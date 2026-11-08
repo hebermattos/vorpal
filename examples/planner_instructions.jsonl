@@ -6,3 +6,8 @@
 {"tool":"nmap","target":"10.10.1.25","goal":"Identify the local SSH service on TCP port 2200.","args":["-sT","-sV","-p","2200"],"reason":"Identify the service on the specified SSH port.","split":"train"}
 {"tool":"nmap","target":"192.168.50.5","goal":"Inspect TCP port 631 on the authorized printer.","args":["-sT","-sV","-p","631"],"reason":"Identify the printer service.","split":"validation"}
 {"tool":"nmap","target":"172.16.2.99","goal":"Inspect the authorized application on TCP port 9090.","args":["-sT","-sV","-p","9090"],"reason":"Identify the application service.","split":"test"}
+{"tool":"nuclei","target":"http://192.168.22.5:8080","goal":"Review the server header on the authorized local web service.","args":["-t","server-header"],"reason":"Apply the reviewed server header template to this local HTTP origin.","split":"train"}
+{"tool":"nuclei","target":"http://10.0.5.3","goal":"Check whether the local HTTP server sends X-Content-Type-Options.","args":["-t","missing-nosniff"],"reason":"Use the reviewed missing-nosniff template for the authorized origin.","split":"train"}
+{"tool":"nuclei","target":"https://192.168.33.8","goal":"Inspect the authorized HTTPS service header.","args":["-t","server-header"],"reason":"Use the pinned local template for HTTP server headers.","split":"train"}
+{"tool":"nuclei","target":"http://172.16.2.10:8081","goal":"Review the HTTP server header and nosniff header.","args":["-t","server-header,missing-nosniff"],"reason":"Run the two reviewed header checks on the authorized local origin.","split":"train"}
+{"tool":"nuclei","target":"http://192.168.71.10","goal":"Inspect the authorized HTTP server header.","args":["-t","server-header"],"reason":"Check the HTTP server header on this origin.","split":"validation"}
