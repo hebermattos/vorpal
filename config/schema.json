@@ -1269,6 +1269,9 @@
       },
       "system_prompt": {
         "type": "string"
+      },
+      "host": {
+        "type": "string"
       }
     }
   },
@@ -1302,6 +1305,58 @@
         "type": "integer",
         "minimum": 1,
         "maximum": 600
+      }
+    }
+  },
+  "assistant": {
+    "type": "object",
+    "properties": {
+      "log_dir": {
+        "type": "string"
+      },
+      "max_message_chars": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1000000
+      },
+      "max_history_turns": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20
+      },
+      "max_answer_chars": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1000000
+      },
+      "max_session_bytes": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1000000
+      },
+      "connect_timeout_seconds": {
+        "type": "number",
+        "minimum": 0.01,
+        "maximum": 10
+      },
+      "max_ports": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 256
+      },
+      "banner_bytes": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1000000
+      },
+      "fallback_query": {
+        "type": "string"
+      },
+      "system_prompt": {
+        "type": "string"
+      },
+      "analysis_question": {
+        "type": "string"
       }
     }
   }

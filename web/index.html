@@ -30,15 +30,16 @@
 </svg>
 <a class="skip-link" href="#main">Skip to content</a>
 <aside class="sidebar" aria-label="Main navigation">
-  <a href="#overview" class="brand" aria-label="Vorpal home"><img src="/favicon.svg" alt="" width="38" height="38"><span>vorpal<span class="brand-dot">.</span><small>LOCAL MODEL LAB</small></span></a>
+  <a href="#assistant" class="brand" aria-label="Vorpal home"><img src="/favicon.svg" alt="" width="38" height="38"><span>vorpal<span class="brand-dot">.</span><small>LOCAL SECURITY ASSISTANT</small></span></a>
   <div class="workspace-label">WORKSPACE <span>01</span></div>
   <nav>
+    <a href="#assistant" data-view="assistant"><svg><use href="#i-check"/></svg>Security assistant</a>
     <a href="#overview" data-view="overview"><svg><use href="#i-grid"/></svg>Overview</a>
-    <a href="#generate" data-view="generate"><svg><use href="#i-code"/></svg>Ask / generate</a>
-    <a href="#train" data-view="train"><svg><use href="#i-train"/></svg>Training<span class="nav-dot" id="training-dot" hidden></span></a>
+    <a href="#generate" data-view="generate"><svg><use href="#i-code"/></svg>Legacy Keras generation</a>
+    <a href="#train" data-view="train"><svg><use href="#i-train"/></svg>Legacy training<span class="nav-dot" id="training-dot" hidden></span></a>
     <a href="#dataset" data-view="dataset"><svg><use href="#i-data"/></svg>Dataset</a>
-    <a href="#evaluate" data-view="evaluate"><svg><use href="#i-check"/></svg>Evaluation</a>
-    <a href="#tools" data-view="tools"><svg><use href="#i-check"/></svg>Tools</a>
+    <a href="#evaluate" data-view="evaluate"><svg><use href="#i-check"/></svg>Legacy evaluation</a>
+    <a href="#tools" data-view="tools"><svg><use href="#i-check"/></svg>Legacy tool planning</a>
     <a href="#settings" data-view="settings"><svg><use href="#i-settings"/></svg>Settings</a>
   </nav>
   <div class="sidebar-note"><span class="small-label">BUILT FOR EXPERIMENTS</span><p>Small models.<br>Big lessons.</p><span class="outline-tag">TensorFlow / Keras</span></div>
@@ -85,6 +86,27 @@
       <div id="tool-availability" class="tool-availability"></div>
       <div class="two-column"><form id="tool-plan-form" class="panel"><div class="panel-header"><div><h2>Request a proposal</h2><p>The model chooses arguments based on the goal.</p></div><svg><use href="#i-code"/></svg></div><div class="form-body"><div class="form-grid"><div class="field"><label for="tool-select">Tool</label><select id="tool-select" name="tool"></select></div><div class="field"><label for="tool-checkpoint">Checkpoint</label><select id="tool-checkpoint" name="checkpoint" class="checkpoint-select"></select></div></div><div class="field"><label for="tool-target">Local target</label><input id="tool-target" name="target" type="text" placeholder="192.168.1.10" autocomplete="off" required><small id="tool-target-hint">Nmap accepts a single private or loopback IPv4 address.</small></div><div class="field"><label for="tool-goal">What do you want to check?</label><input id="tool-goal" name="goal" type="text" placeholder="Identify services on web and SSH ports" required></div><div class="field"><label for="tool-threads">Model threads</label><input id="tool-threads" name="threads" type="number" min="1" required></div><button type="submit" class="button primary full-width job-trigger"><svg><use href="#i-code"/></svg>Generate command proposal</button><p class="field-note">Generating a proposal does not execute the tool.</p></div></form>
       <article class="panel tool-proposal"><div class="panel-header"><div><h2>Latest proposal</h2><p id="tool-plan-context">No command generated yet.</p></div><span id="tool-plan-badge" class="subtle-chip">WAITING</span></div><div class="form-body"><div id="tool-plan-empty" class="empty-activity"><svg><use href="#i-code"/></svg><strong>First the goal. Then the command.</strong><p>Choose a tool and let the model propose arguments for review.</p></div><div id="tool-plan-details" hidden><p id="tool-plan-goal" class="tool-reason"></p><pre id="tool-command" class="tool-command" tabindex="0"></pre><p id="tool-reason" class="tool-reason"></p><div id="tool-plan-error" class="error-banner" hidden></div><p id="tool-goal-note" class="field-note" hidden></p><details id="tool-raw-details" hidden><summary>Inspect model response</summary><pre id="tool-raw-response" class="tool-command"></pre></details><label class="tool-authorization" id="tool-authorization-label"><input type="checkbox" id="tool-authorized"><span>I am authorized to test <strong id="tool-authorized-target"></strong> and have reviewed the command above.</span></label><p id="tool-plan-stale" class="field-note" hidden>You changed the input. Generate a new proposal before executing.</p><button type="button" id="execute-tool-button" class="button primary full-width" disabled><svg><use href="#i-play"/></svg>Execute reviewed command</button></div><p class="field-note">Invalid output is rejected. Nuclei uses only reviewed local templates from the catalog.</p></div></article></div>
+    </section>
+    <section id="view-assistant" class="view" hidden aria-labelledby="assistant-title">
+      <div class="page-heading"><div><div class="eyebrow"><span></span>OLLAMA + LOCAL RAG</div><h1 id="assistant-title">Security assistant</h1><p>Review an authorized local IP or ask for security advice with documentation sources.</p></div></div>
+      <div class="two-column">
+        <form id="ip-analysis-form" class="panel"><div class="panel-header"><div><h2>Analyze a local IP</h2><p>Limited TCP connections and passive banners. No exploit execution.</p></div></div><div class="form-body">
+          <div class="field"><label for="analysis-target">Authorized IPv4 target</label><input id="analysis-target" name="target" placeholder="192.168.1.10" required autocomplete="off"></div>
+          <div class="field"><label for="analysis-ports">TCP ports (optional)</label><input id="analysis-ports" name="ports" placeholder="22,80,443"><small>Leave empty to use the configured common ports.</small></div>
+          <label class="tool-authorization"><input id="analysis-authorized" type="checkbox" required><span>I am authorized to connect to this exact target.</span></label>
+          <button class="button primary full-width job-trigger" type="submit">Analyze IP with Ollama + RAG</button>
+          <pre id="ip-analysis-result" class="assistant-transcript" aria-live="polite">No analysis yet.</pre>
+          <button id="discuss-analysis" class="button secondary" type="button" disabled>Discuss this report in chat</button>
+          <div class="field"><label><input id="assistant-import-sources" type="checkbox"> Import configured URLs, scraping sources and PDFs</label></div>
+          <button id="assistant-update-knowledge" class="button secondary job-trigger" type="button">Update RAG knowledge</button>
+        </div></form>
+        <article class="panel"><div class="panel-header"><div><h2>Security advice chat</h2><p>Ollama answers using local RAG references. No Keras checkpoint.</p></div><button id="new-conversation" class="button secondary" type="button">New chat</button></div><div class="form-body">
+          <p id="chat-context">General security advice. No target connections are made by chat.</p>
+          <div id="security-conversation" class="assistant-transcript" role="log" aria-live="polite"></div>
+          <form id="security-chat-form"><div class="field"><label for="security-message">Your question</label><textarea id="security-message" name="message" maxlength="4000" rows="4" placeholder="How can I secure SSH access?" required></textarea></div><button id="send-security-message" class="button primary full-width" type="submit">Send question</button></form>
+          <p id="chat-status" role="status"></p><p class="field-note">Sources are documentation references, not proof of a vulnerability. Review all advice and commands before use.</p>
+        </div></article>
+      </div>
     </section>
     <section id="view-settings" class="view" hidden aria-labelledby="settings-title">
       <div class="page-heading"><div><div class="eyebrow"><span></span>YOUR LAB, YOUR CHOICES</div><h1 id="settings-title">Adjust the experiment.</h1><p>Edit the JSON files used by project commands.</p></div><span class="subtle-chip">Configuration validation</span></div>

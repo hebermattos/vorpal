@@ -112,10 +112,14 @@ def parse_nuclei(raw, target, maximum):
 
 def _local_chat(messages, settings):
     """Use a loopback-only llama.cpp OpenAI-compatible server, no remote API."""
-    endpoint = f'http://127.0.0.1:{settings["port"]}/v1/chat/completions'
+    host = settings.get('host', '127.0.0.1')
+    if host not in {'127.0.0.1', 'localhost'}:
+        raise AnalysisError('Local inference requires a loopback host.')
+    endpoint = f'http://{host}:{settings["port"]}/v1/chat/completions'
     payload = json.dumps({"model": settings["model"], "messages": messages,
                           "stream": False, "temperature": settings["temperature"],
-                          "max_tokens": settings["max_tokens"]}).encode("utf-8")
+                          "max_tokens": settings["max_tokens"],
+                          "response_format": {"type": "json_object"}}).encode("utf-8")
     request = urllib.request.Request(endpoint, data=payload,
                                      headers={"Content-Type": "application/json"}, method="POST")
     try:
@@ -127,7 +131,7 @@ def _local_chat(messages, settings):
             raise AnalysisError("Local LLM response exceeds size limit.")
         result = json.loads(data)
         return result["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError, ValueError, urllib.error.URLError) as exc:
+    except (KeyError, IndexError, TypeError, ValueError, urllib.error.URLError, TimeoutError) as exc:
         raise AnalysisError(f"Local LLM unavailable or invalid response: {exc}") from exc
 
 
@@ -211,7 +215,7 @@ def analyze(target, *, nmap_xml=None, nuclei_jsonl=None, database=None, authoriz
     except ValueError as exc:
         raise AnalysisError("The LLM returned invalid JSON.") from exc
     hypotheses, proposals = _validate_proposal(response, target, sources, settings)
-    report = {"target": target, "backend": "llama_cpp", "rag_required": True,
+    report = {"target": target, "backend": "local_openai_compatible", "rag_required": True,
               "observations": observed, "sources": sources,
               "hypotheses": hypotheses, "next_checks": proposals,
               "generated_at": datetime.now(timezone.utc).isoformat(),

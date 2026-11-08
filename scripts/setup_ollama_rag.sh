@@ -59,7 +59,7 @@ from config import load_config
 setup = load_config('setup_ollama_rag')
 scan = load_config('scan_intelligence')
 values = [setup['ollama_model'], scan['model'], str(scan['port']),
-          str(setup['startup_timeout_seconds'])]
+          str(setup['startup_timeout_seconds']), scan['host']]
 if any('\n' in value or '\r' in value for value in values):
     raise ValueError('Setup values must be single-line strings.')
 if any(value.startswith('-') or 'cloud' in value.lower() for value in values[:2]):
@@ -70,7 +70,7 @@ PY
 mapfile -t values <<< "$settings"
 model=${values[0]}
 alias=${values[1]}
-export OLLAMA_HOST="127.0.0.1:${values[2]}"
+export OLLAMA_HOST="${values[4]:-127.0.0.1}:${values[2]}"
 timeout_seconds=${values[3]}
 
 "$python" -m pip install -r requirements.txt

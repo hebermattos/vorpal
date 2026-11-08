@@ -52,6 +52,7 @@ class JobManager:
         self.process = None
         self.worker = None
         self.closed = False
+        self.chat_active = False
         self.directory = (root / settings["log_dir"]).resolve()
         if not self.directory.is_relative_to(root.resolve()):
             raise ValueError("The job log directory must stay inside the project")
@@ -86,7 +87,7 @@ class JobManager:
 
     def start(self, action, command):
         with self.lock:
-            if self.closed or self.active():
+            if self.closed or self.active() or self.chat_active:
                 raise BusyError("A job is already running. Wait or cancel it before starting another.")
             job = {"id": secrets.token_hex(12), "action": action, "command": command,
                    "status": "running", "created_at": now(), "finished_at": None,
@@ -222,7 +223,7 @@ class Application:
 
     def save_configuration(self, name, value):
         with self.lock, self.jobs.lock:
-            if self.jobs.active():
+            if self.jobs.active() or self.jobs.chat_active:
                 raise BusyError("Wait for the job to finish before changing settings.")
             self.configuration(name)
             validate_config(name, value)
@@ -264,9 +265,29 @@ class Application:
             "prepare": {"profile"}, "import": {"profile"},
             "tool_plan": {"tool", "target", "goal", "threads", "checkpoint"},
             "tool_run": {"plan_id", "digest", "authorized"},
+            "analyze_ip": {"target", "authorized", "ports"},
+            "knowledge_update": {"import_sources"},
         }
         if action not in allowed or not isinstance(params, dict) or params.keys() - allowed[action]:
             raise ValueError("Invalid action or parameters.")
+        if action == 'analyze_ip':
+            if params.get('authorized') is not True:
+                raise ValueError('Explicit authorization is required for this target.')
+            target = validate_tool_target('nmap', params.get('target'))
+            command = [sys.executable, '-u', str(self.root / 'src/assistant.py'),
+                       'analyze', '--target', target, '--authorized']
+            if params.get('ports'):
+                try:
+                    from .assistant import ports_from_text
+                except ImportError:
+                    from assistant import ports_from_text
+                command += ['--ports', ','.join(map(str, ports_from_text(params['ports'])))]
+            return command
+        if action == 'knowledge_update':
+            if type(params.get('import_sources', False)) is not bool:
+                raise ValueError('import_sources must be a boolean.')
+            return [sys.executable, '-u', str(self.root / 'vorpal.py'), 'knowledge', 'update'] + (
+                ['--import-sources'] if params.get('import_sources') else [])
         if action in {"tool_plan", "tool_run"}:
             settings = self.configuration("security_tools")
             command = [sys.executable, "-u", str(self.root / "src/security_tools.py")]
@@ -337,6 +358,24 @@ class Application:
     def start(self, action, params):
         with self.lock:
             return self.jobs.start(action, self.command(action, params))
+
+    def chat(self, body):
+        if body.keys() - {'message', 'session_id', 'report_id'}:
+            raise ValueError('Invalid chat parameters.')
+        with self.jobs.lock:
+            if self.jobs.closed or self.jobs.active() or self.jobs.chat_active:
+                raise BusyError('Wait for the running request to finish before sending a chat message.')
+            self.jobs.chat_active = True
+        try:
+            try:
+                from .assistant import chat
+            except ImportError:
+                from assistant import chat
+            return chat(body.get('message'), session_id=body.get('session_id'),
+                        report_id=body.get('report_id'), root=self.root)
+        finally:
+            with self.jobs.lock:
+                self.jobs.chat_active = False
 
     def state(self):
         train = self.configuration("train")
@@ -465,6 +504,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, app.jobs.cancel(path.split("/")[3]))
                 elif path == "/api/config":
                     self._send(200, app.save_configuration(body.get("name", ""), body.get("value")))
+                elif path == '/api/chat':
+                    self._send(200, app.chat(body))
                 else:
                     self._send(404, {"error": "Route not found."})
             elif path == "/api/state":
@@ -526,7 +567,7 @@ def watch_sources(server, stopped, restart):
         if source_revision(server.app.root) == previous:
             continue
         with server.app.jobs.lock:
-            if server.app.jobs.active():
+            if server.app.jobs.active() or server.app.jobs.chat_active:
                 continue
             server.app.jobs.closed = True
         print("Source changed; restarting the dashboard…", flush=True)
@@ -551,7 +592,7 @@ def main():
         threading.Thread(target=watch_sources, args=(server, stopped, restart), daemon=True).start()
         print("Development reload enabled (backend reload waits for active jobs).", flush=True)
     print(f"Vorpal Web: http://127.0.0.1:{server.server_address[1]}", flush=True)
-    print("Local dashboard · TensorFlow CPU · Ctrl+C to stop", flush=True)
+    print("Local dashboard · Ollama + RAG security assistant · Ctrl+C to stop", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -96,6 +96,8 @@ def validate_config(name, value):
         raise ConfigError(f"Unknown configuration section: {name}")
     path = CONFIG_DIR / f"{name}.json"
     _validate(value, schemas[name], str(path))
+    if name == 'scan_intelligence' and value['host'] not in {'127.0.0.1', 'localhost'}:
+        raise ConfigError(f'Invalid configuration {path}.host: local inference requires a loopback host.')
     patterns = {
         "content_safety": [(value.get("secret_content"), "secret_content")],
         "data": [(value.get("policy", {}).get("skip_name"), "policy.skip_name")],
