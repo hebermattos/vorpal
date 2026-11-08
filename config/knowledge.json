@@ -1,0 +1,6 @@
+{
+  "corpus": "corpus",
+  "database": "data/rag/index.sqlite3",
+  "imported_subdir": "imported",
+  "report_dir": "logs/knowledge"
+}
