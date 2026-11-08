@@ -50,8 +50,11 @@ unsupported source IDs fail closed.
 before any target connection. A populated RAG index is required first.
 `--tool tcp` performs bounded TCP connects and passive banner reads.
 `--tool nmap` first generates a goal-based proposal through Ollama + RAG.
-The planner receives the exact selected ports as constraints; deterministic
-validation rejects expanded port scope or unsupported arguments. The command,
+The planner receives the exact selected ports as constraints. The application
+attaches `-p` when the model omits it, using the requested or configured default
+ports. An explicit different list, conflicting discovery modes, or unsupported
+arguments are rejected; model-generated probe choices remain subject to the
+capability checks. The command,
 rationale, references, saved plan ID and digest are returned for human review.
 A second request with `--plan-id`, `--digest` and `--authorized` executes that
 reviewed command; target, ports, executable and policy fingerprints are checked
@@ -61,7 +64,9 @@ The `default_tool`, `planning_goal`, deadline and output cap live in `assistant.
 `--goal` overrides the planning objective. `nmap_required_flags` sets minimum
 evidence capabilities; `planning_attempts` caps correction requests to the
 model. The planner receives the allowed argument catalog and previous rejection
-reason. Invalid proposals have no command fallback. Returned
+reason. Rejected attempts save their raw model responses and errors in a planning
+diagnostic, and the final error includes its path. Invalid proposals have no
+command fallback. Returned
 `execute_after_review` is a shell-quoted CLI request for the exact reviewed plan.
 `src/collectors.py` bounds execution and combined stdout/stderr bytes, preserves
 separate raw evidence files, and terminates the owned child on failure or

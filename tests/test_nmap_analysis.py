@@ -53,6 +53,32 @@ class NmapAnalysisTests(unittest.TestCase):
         self.assertIn('reason', proposal)
         self.assertTrue(proposal['plan_id'])
 
+    def test_default_ports_are_bound_when_model_omits_port_selection(self):
+        with patch('security_tools.shutil.which', return_value='/usr/bin/nmap'), patch('collectors.run') as run:
+            result = assistant.analyze_ip('192.168.0.109', authorized=True, tool='nmap',
+                         goal='Identify services and versions with low-impact probes', root=self.root, database=self.db,
+                         client=lambda *args: json.dumps({'args': ['-sT', '-sV', '--version-light'],
+                                                         'reason': 'Use light version detection.'}))
+        run.assert_not_called()
+        ports = result['argv'][result['argv'].index('-p') + 1]
+        self.assertEqual([int(p) for p in ports.split(',')], assistant.ports_from_text())
+        self.assertEqual(result['planning_attempts'], 1)
+        self.assertEqual(result['argv'][-1], '192.168.0.109')
+
+    def test_conflicting_discovery_modes_are_rejected_with_saved_diagnostics(self):
+        response = json.dumps({'args': ['-sT', '-sV', '--version-light', '-F', '-p', '22'],
+                               'reason': 'Invalid mixed port selection.'})
+        with patch('security_tools.shutil.which', return_value='/usr/bin/nmap'), patch('collectors.run') as run:
+            with self.assertRaisesRegex(ValueError, 'Diagnostics:') as error:
+                assistant.analyze_ip('127.0.0.1', authorized=True, tool='nmap', ports='22',
+                                     root=self.root, database=self.db, client=lambda *args: response)
+        run.assert_not_called()
+        path = Path(str(error.exception).split('Diagnostics: ', 1)[1])
+        record = json.loads(path.read_text())
+        self.assertEqual(record['status'], 'rejected')
+        self.assertEqual(len(record['rejections']), assistant.load_config('assistant')['planning_attempts'])
+        self.assertEqual(record['rejections'][0]['model_response'], response)
+
     def test_model_cannot_broaden_selected_ports(self):
         with patch('security_tools.shutil.which', return_value='/usr/bin/nmap'), patch('collectors.run') as run:
             with self.assertRaisesRegex(ValueError, 'port scope'):

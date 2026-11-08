@@ -230,18 +230,26 @@ def analyze_ip(target, *, authorized=False, ports=None, tool=None, goal=None, pl
                 raise ValueError('A digest requires the reviewed plan ID.')
             goal = goal or settings['planning_goal']
             feedback = None
+            rejections = []
             for attempt in range(settings['planning_attempts']):
+                plan = None
                 try:
                     plan = security_tools.propose('nmap', target, goal, root=root, database=path, client=client,
-                                                 constraints={'ports': selected, 'explicit_ports_required': True,
+                                                 constraints={'ports': selected, 'port_selection_owned_by_application': True,
                                                               'required_flags': settings['nmap_required_flags']}, feedback=feedback)
                     validate_plan_scope(plan, target, selected)
                     break
                 except (security_tools.ToolPlanError, ValueError) as exc:
+                    rejections.append({'attempt': attempt + 1, 'error': str(exc),
+                                       'model_response': getattr(exc, 'response', None) or (plan or {}).get('model_response')})
                     if attempt + 1 == settings['planning_attempts']:
-                        raise
+                        rejected = security_tools.write_report({'status': 'rejected', 'tool': tool, 'target': target,
+                                           'goal': goal, 'selected_ports': selected, 'rejections': rejections}, 'plans', root=root)
+                        directory = load_config('security_tools')['runtime']['reports_dir']
+                        raise ValueError(f'{exc} Diagnostics: {Path(root) / directory / "plans" / (rejected["id"] + ".json")}') from exc
                     feedback = str(exc)
             plan['planning_attempts'] = attempt + 1
+            plan['rejections'] = rejections
             plan = security_tools.write_report(plan, 'plans', root=root)
             execution = [sys.executable, str(Path(root) / 'vorpal.py'), 'analyze', '--target', target,
                          '--tool', 'nmap', '--ports', ','.join(map(str, selected)), '--authorized',
