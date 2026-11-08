@@ -179,8 +179,10 @@ Question mode has no conversation memory and requires relevant training data. Se
 ## Local retrieval (RAG)
 
 Vorpal can now index **existing UTF-8 corpus files and imported text** separately from
-training. The SQLite FTS5 index does not change datasets, split histories, or
-checkpoints, and neither command executes network scans, downloads, or training.
+training. SQLite FTS5 provides BM25 when available; builds without FTS5 use a
+portable Python BM25 fallback (slower on large corpora). The index does not
+change datasets, split histories, or checkpoints, and neither command executes
+network scans, downloads, or training.
 
 ```bash
 # Index existing files using SQLite FTS5/BM25 (no extra packages)
