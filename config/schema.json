@@ -1087,6 +1087,16 @@
           "max_examples": {"type": "integer", "minimum": 1},
           "max_line_chars": {"type": "integer", "minimum": 100}
         }
+      },
+      "curriculum": {
+        "type": "object",
+        "properties": {
+          "stages": {
+            "type": "array",
+            "min_items": 1,
+            "items": {"type": "string"}
+          }
+        }
       }
     }
   }
