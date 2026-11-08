@@ -29,8 +29,10 @@ class KnowledgeTests(unittest.TestCase):
         self.addCleanup(self.root_patch.stop)
 
     def run_update(self, **kw):
-        return knowledge.update(corpus="corpus", database="data/rag.sqlite3",
-                                report_dir="logs", **kw)
+        options = {"corpus": "corpus", "database": "data/rag.sqlite3",
+                   "report_dir": "logs"}
+        options.update(kw)
+        return knowledge.update(**options)
 
     def test_incremental_update_and_report(self):
         with patch.object(knowledge, "import_directory", side_effect=AssertionError("network import")):
