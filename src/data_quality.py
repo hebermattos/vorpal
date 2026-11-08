@@ -61,6 +61,7 @@ def audit(corpus, out):
     return {"corpus": str(corpus), "out": str(out), "counts": counts,
             "split_history": {"train": len(train), "validation": len(valid)},
             "integrity_passed": not findings, "findings": findings,
+            "quality_warnings": {key: value for key, value in counts.items() if key != "eligible" and value > 0},
             "limitations": ["Heuristic secret detection and exact/whitespace-trimmed duplicate counts only.",
                             "Does not measure semantic duplication, licenses, or dataset correctness.",
                             "Binary size checks do not authenticate binary contents."]}

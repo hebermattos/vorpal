@@ -278,7 +278,7 @@ def propose(tool, target, goal, *, model=None, settings=None, root=ROOT):
         from .generate import generate
     except ImportError:
         from generate import generate
-    output = generate(model, prompt, **settings['generation'], stop_on_json=True)
+    output = generate(model, prompt, **settings['generation'], stop_on_json=True, json_mode=True)
     response = output[len(prompt):]
     try:
         plan = proposal_from_response(tool, target, goal, response, settings=settings, root=root)

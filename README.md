@@ -236,6 +236,36 @@ Defaults, prompts and restriction policies live in `config/`. CLI options overri
 
 Generated import caches, local PDF folders, `data/`, `checkpoints/`, `logs/` and `reports/` are ignored by Git. Local PDFs are not included in a fresh clone. Legacy PyTorch checkpoints cannot be loaded or automatically converted to Keras.
 
+## Optional supervised instruction fine-tuning
+
+The default autoregressive training mode remains unchanged. To specialize an existing
+checkpoint for reviewed scanner planning, use the **same training entry point**:
+
+```bash
+python src/train.py --instruction-examples examples/planner_instructions.jsonl --steps 100 --threads 4
+```
+
+This mode requires the existing shared Keras checkpoint and matching architecture. It does
+not import source data, execute scanners, reset the model, or change existing binary datasets.
+It uses response-only loss masking (prompt/padding positions carry zero weight), a\nconfigurable Nmap → Nuclei → mixed-tool curriculum with tool-balanced mixed sampling, and separately
+tracks consumed training examples at `data/instructions/training_state.json`. Use `--replay`
+to train previously consumed instruction examples again. `--reset` is not supported in
+instruction mode. Normal training and instruction training should not run concurrently.
+
+Each line of the reviewed JSONL contains exactly `tool`, `target`, `goal`, `args`,
+`reason`, and `split` (`train`, `validation`, or `test`). Local targets and flags
+are validated against the same deterministic planner policy. Validation/test records are
+**never** used in instruction training. Examples too long for the checkpoint's byte
+context are rejected; the script never truncates training intent. This is a small teaching
+set, not a measured improvement in model quality. Keep functional benchmark fixtures
+separate from instruction training examples and benchmark the resulting checkpoint.
+The curriculum stages are validated in `config/instruction_train.json`; missing tool
+categories fall back to a balanced sample of available categories. The small
+reviewed example set is illustrative, and additional diverse reviewed examples
+are needed before expecting reliable generation. Constrained JSON generation
+forces an opening object and excludes control/non-ASCII bytes, but does not
+guarantee valid JSON; strict schema and safety-policy validation still reject
+invalid model responses.
 
 ## Model and dataset quality (offline-first)
 
@@ -245,8 +275,8 @@ Run a deterministic benchmark of the locally trained model's scanner-command pro
 python src/model_quality.py --checkpoint checkpoints/latest.keras --output reports/model_quality.json
 ```
 
-The benchmark uses reviewed cases in `config/model_quality_cases.json`. It scores JSON syntax, schema,
-argument-policy validity, exact expected arguments, and correct rejection of disallowed proposals.
+The benchmark uses reviewed cases in `config/model_quality_cases.json`. It scores JSON syntax, schema, policy validation, task arguments, explicit model refusals, and
+policy-blocked unsafe proposals separately. An invalid proposal blocked by policy is **not** a model refusal.
 It never executes scanners. Case goals/expected arguments are fixtures and do not prove that a
 checkpoint is accurate in real network assessments. Keep benchmark examples out of training data.
 
@@ -265,10 +295,11 @@ python src/data_quality.py --corpus corpus/security --out data/security --report
 ```
 
 The audit reports exact/trailing-whitespace duplicates, short files, filtered secret-containing
-files, and train/validation history conflicts. Invalid persisted split state fails closed.
+files, and train/validation history conflicts. Data-quality warnings are distinct from integrity failures. Invalid persisted split state fails closed.
 This does **not** detect semantic duplicates or prove dataset licensing, and binary size
 checks are not cryptographic verification. Preserve split history and review audit results
 before incremental/replay training; test datasets must remain excluded from training.
+
 
 ## Tests and further details
 

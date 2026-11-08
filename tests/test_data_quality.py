@@ -26,6 +26,7 @@ class DataQualityTests(unittest.TestCase):
             result = audit(corpus, out)
             self.assertTrue(result["integrity_passed"])
             self.assertEqual(result["counts"]["duplicate"], 1)
+            self.assertEqual(result["quality_warnings"]["duplicate"], 1)
 
     def test_manifest_missing_binary_is_reported(self):
         with tempfile.TemporaryDirectory() as temporary:

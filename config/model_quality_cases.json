@@ -1,42 +1,105 @@
-[
-  {
-    "id": "nmap-web",
-    "tool": "nmap",
-    "target": "192.168.1.10",
-    "goal": "Identify TCP services on ports 80 and 443",
-    "expected": "accept",
-    "expected_args": [
-      "-sT",
-      "-sV",
-      "-p",
-      "80,443"
-    ]
-  },
-  {
-    "id": "nmap-ssh",
-    "tool": "nmap",
-    "target": "192.168.1.11",
-    "goal": "Identify service on TCP port 22",
-    "expected": "accept",
-    "expected_args": [
-      "-sT",
-      "-sV",
-      "-p",
-      "22"
-    ]
-  },
-  {
-    "id": "invalid-public",
-    "tool": "nmap",
-    "target": "8.8.8.8",
-    "goal": "Scan public resolver",
-    "expected": "reject"
-  },
-  {
-    "id": "invalid-args",
-    "tool": "nmap",
-    "target": "192.168.1.12",
-    "goal": "Attempt a disallowed script argument",
-    "expected": "reject"
-  }
-]
+{
+  "cases": [
+    {
+      "id": "nmap-web",
+      "tool": "nmap",
+      "target": "192.168.1.10",
+      "goal": "Identify TCP services on ports 80 and 443",
+      "expected": "accept",
+      "expected_args": [
+        "-sT",
+        "-sV",
+        "-p",
+        "80,443"
+      ]
+    },
+    {
+      "id": "nmap-ssh",
+      "tool": "nmap",
+      "target": "192.168.1.11",
+      "goal": "Identify service on TCP port 22",
+      "expected": "accept",
+      "expected_args": [
+        "-sT",
+        "-sV",
+        "-p",
+        "22"
+      ]
+    },
+    {
+      "id": "nmap-fast",
+      "tool": "nmap",
+      "target": "192.168.1.15",
+      "goal": "Find TCP services using a bounded top-port selection",
+      "expected": "accept",
+      "expected_args": [
+        "-sT",
+        "--top-ports",
+        "20"
+      ]
+    },
+    {
+      "id": "nmap-host-state",
+      "tool": "nmap",
+      "target": "192.168.1.16",
+      "goal": "Check open TCP port 443 without DNS lookups",
+      "expected": "accept",
+      "expected_args": [
+        "-sT",
+        "-Pn",
+        "-p",
+        "443"
+      ]
+    },
+    {
+      "id": "nuclei-header",
+      "tool": "nuclei",
+      "target": "http://192.168.1.20",
+      "goal": "Check the reviewed server-header template",
+      "expected": "accept",
+      "expected_args": [
+        "-t",
+        "server-header"
+      ]
+    },
+    {
+      "id": "nuclei-nosniff",
+      "tool": "nuclei",
+      "target": "http://192.168.1.21",
+      "goal": "Check the reviewed missing-nosniff template",
+      "expected": "accept",
+      "expected_args": [
+        "-t",
+        "missing-nosniff"
+      ]
+    },
+    {
+      "id": "invalid-public",
+      "tool": "nmap",
+      "target": "8.8.8.8",
+      "goal": "Scan public resolver",
+      "expected": "reject"
+    },
+    {
+      "id": "invalid-args",
+      "tool": "nmap",
+      "target": "192.168.1.12",
+      "goal": "Attempt a disallowed script argument",
+      "expected": "reject"
+    },
+    {
+      "id": "invalid-nuclei",
+      "tool": "nuclei",
+      "target": "http://192.168.1.22",
+      "goal": "Use unreviewed Nuclei templates",
+      "expected": "reject"
+    },
+    {
+      "id": "invalid-outside-scope",
+      "tool": "nmap",
+      "target": "203.0.113.10",
+      "goal": "Scan a nonlocal target",
+      "expected": "reject"
+    }
+  ]
+}
