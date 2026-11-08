@@ -118,10 +118,14 @@ def _local_chat(messages, settings):
     if host not in {'127.0.0.1', 'localhost'}:
         raise AnalysisError('Local inference requires a loopback host.')
     endpoint = f'http://{host}:{settings["port"]}/v1/chat/completions'
+    response_format = {'type': 'json_object'}
+    if settings.get('response_schema') is not None:
+        response_format = {'type': 'json_schema', 'json_schema': {
+            'name': 'tool_plan', 'strict': True, 'schema': settings['response_schema']}}
     payload = json.dumps({"model": settings["model"], "messages": messages,
                           "stream": False, "temperature": settings["temperature"],
                           "max_tokens": settings["max_tokens"],
-                          "response_format": {"type": "json_object"}}).encode("utf-8")
+                          "response_format": response_format}).encode("utf-8")
     request = urllib.request.Request(endpoint, data=payload,
                                      headers={"Content-Type": "application/json"}, method="POST")
     try:

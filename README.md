@@ -119,10 +119,14 @@ shell commands, Nmap scripts and unvalidated arguments are not accepted. `nmap_r
 configures minimum evidence capabilities (TCP/service detection and light
 version probes by default). `planning_attempts` bounds model correction attempts
 (default two); an under-specified or unsafe command is sent back for correction
-within that limit and then rejected if still invalid. Failed planning saves
-the rejected responses/errors under `reports/security_tools/plans/` and reports
-the diagnostic path. Vorpal
-does not install Nmap or silently switch collectors if it is unavailable.
+within that limit and then rejected if still invalid. Planning requests use
+schema-constrained JSON. In selected-port analysis, the argument schema contains
+actual permitted option tokens, excluding placeholder words and port-discovery
+modes; the application binds the exact port list. Runtime argument and scope
+validation still apply even when a server returns nonconforming output. Failed
+planning saves the rejected responses/errors under `reports/security_tools/plans/`
+and reports the diagnostic path. Vorpal does not install Nmap or silently switch
+collectors if it is unavailable.
 
 After reviewing the returned command, execute that exact proposal and analyze
 its collected evidence:
