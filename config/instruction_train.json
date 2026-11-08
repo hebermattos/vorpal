@@ -5,5 +5,12 @@
   "limits": {
     "max_examples": 20000,
     "max_line_chars": 4096
+  },
+  "curriculum": {
+    "stages": [
+      "nmap",
+      "nuclei",
+      "mixed"
+    ]
   }
 }
