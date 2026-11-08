@@ -20,9 +20,9 @@ python -m pip install -U pip
 python -m pip install -r requirements.txt
 ```
 
-## Default local Llama + RAG workflow
+## Default Ollama + RAG workflow
 
-The primary walkthrough is in the [README](../README.md#default-analysis-local-llama--rag).
+The primary walkthrough is in the [README](../README.md#default-analysis-ollama--rag).
 The primary CLI commands are `python vorpal.py analyze --target IP --authorized`
 and `python vorpal.py chat`. The dashboard opens on **Security assistant**, using
 the same Ollama + RAG backend. Configuration and bounded history/log rules are
@@ -31,7 +31,13 @@ in `config/assistant.json`; reports and conversations are saved under
 JSONL for one explicitly authorized private IPv4 target. It does not scan.
 Configuration and the fixed safety prompt are in `config/scan_intelligence.json`.
 
-Run an independently installed `llama-server` with a previously obtained,
+Start Ollama with `python src/run_ollama.py`, or use
+`bash scripts/setup_ollama_rag.sh --import-sources` for installation, model
+preparation and indexing. The default endpoint is `http://127.0.0.1:11434` and
+the model is `qwen2.5-coder:3b`. Both are configured in
+`config/scan_intelligence.json` (`host`, `port`, `model`).
+
+Alternatively, run an independently installed `llama-server` with a previously obtained,
 licensed and hardware-compatible Llama Instruct GGUF model. Example:
 
 ```bash
@@ -41,7 +47,8 @@ llama-server -m /path/to/your-instruct-model.gguf --alias qwen2.5-coder:3b --hos
 The server alias must match the `model` value in
 `config/scan_intelligence.json`; `port` defaults to `11434`. All analysis
 requests go to loopback (no cloud provider, proxies or redirects). No model
-is downloaded, trained or fine-tuned automatically.
+is downloaded, trained or fine-tuned by analysis or chat commands. The setup
+script may install Ollama and download the configured model.
 
 ### RAG index ownership
 
@@ -83,10 +90,11 @@ Generated Nmap/Nuclei arguments pass the separate deterministic policy
 validator. They are proposals for human review, **not executable actions**.
 No automatic follow-up execution is available from this module.
 
-`python vorpal.py <target> --authorized ...` remains the distinct, legacy
-local TCP-report command; `src/security_tools.py plan` remains the separate
-experimental Keras-checkpoint command planner. Neither is a shortcut for
-the default Llama + RAG report analysis.
+`python vorpal.py <target> --authorized ...` is a shortcut for the primary
+Ollama + RAG IP analysis command. The old TCP-report scanner is available
+explicitly as `python vorpal.py legacy-scan <target> --authorized ...`.
+`src/security_tools.py plan` remains the separate experimental
+Keras-checkpoint command planner.
 
 ## Local web interface
 
@@ -103,14 +111,15 @@ python src/web.py --reload
 ```
 
 Frontend edits in `web/` refresh the page on the next dashboard poll. Python edits
-in `src/` and JSON edits in `config/` restart the server once dashboard jobs finish.
+in `src/` and JSON edits in `config/` restart the server once dashboard jobs and chat requests finish.
 Unsaved form input can be lost on refresh. Checkpoint, corpus and log writes do not
 trigger reload. The regular command keeps automatic reload disabled.
 
-Open **http://127.0.0.1:8765** in your browser. Use `--port 8766` to choose another port. The server works from any current directory and runs project commands from the repository root with the same Python interpreter used to start it. There are no additional dependencies, frontend build steps, external fonts or external services.
+Open **http://127.0.0.1:8765/#assistant** in your browser. Use `--port 8766` to choose another port. The server works from any current directory and runs project commands from the repository root with the same Python interpreter used to start it. The UI needs no frontend build or external fonts. Primary assistant actions require the configured local Ollama-compatible server and a populated RAG index.
 
 The dashboard provides:
 
+- **Security assistant (initial view):** authorized IP analysis, security-advice chat with bounded history and citations, report follow-ups and RAG knowledge updates with optional source imports.
 - **Overview:** actual checkpoint progress, prepared document counts, corpus size, validation history and recent activity. Missing metrics are shown as empty states.
 - **Generate code:** prompt, checkpoint, byte count, temperature and CPU threads, with copyable raw output. Generated code is never executed.
 - **Training:** new documents or `--replay`, corpus profiles, steps, batch size, live output and interruption. Starting training updates the normal project checkpoints; there is no automatic training on page load and no reset button.
@@ -129,7 +138,9 @@ Runtime defaults are read from the JSON files in `config/`; no extra dependency 
 
 | File | Settings |
 | --- | --- |
-| `config/scan_intelligence.json` | Local llama.cpp server port/model alias, generation limits, report bounds and analysis prompt |
+| `config/scan_intelligence.json` | Local Ollama/OpenAI-compatible server host, port and model, generation limits, report bounds and saved-analysis prompt |
+| `config/assistant.json` | Security chatbot and IP-analysis prompts, TCP connection limits, bounded history and assistant log directory |
+| `config/setup_ollama_rag.json` | Setup model, embedding model identifier and server startup timeout |
 | `config/rag.json` | RAG database, source paths, chunking, BM25/hybrid retrieval and local embedding model |
 | `config/knowledge.json` | Incremental whole-corpus indexing, import destination and audit reports |
 | `config/security_tools.json` | Nmap/Nuclei planning, allowed arguments, execution bounds and reviewed template fingerprints |
@@ -451,6 +462,9 @@ The tests cover import validation, nested cache exclusions, subject selection an
 
 ## Organization
 
+- `src/assistant.py`: shared Ollama + RAG IP analysis, sourced security chat and conversation/report persistence.
+- `src/knowledge.py` and `src/rag.py`: incremental knowledge updates and local retrieval.
+- `src/run_ollama.py` and `scripts/setup_ollama_rag.sh`: configured local inference launcher and installation/indexing setup.
 - `src/security_tools.py`: model-proposed, validated local Nmap/Nuclei command planning and execution.
 - `tools/nuclei/`: reviewed HTTP templates and isolated Nuclei configuration.
 - `src/web.py`: local dashboard HTTP server and background task runner.
