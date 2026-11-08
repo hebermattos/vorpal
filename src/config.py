@@ -141,6 +141,14 @@ def validate_config(name, value):
         local_paths.extend(profile[key] for profile in value["profiles"] for key in ("corpus", "out"))
         if any(Path(raw).is_absolute() or ".." in Path(raw).parts for raw in local_paths):
             raise ConfigError(f"Invalid configuration {path}: web paths must stay inside the project")
+    if name == "knowledge":
+        raw_paths = [value[key] for key in ("corpus", "database", "report_dir")]
+        raw_paths.append(value["imported_subdir"])
+        if any(not raw.strip() or Path(raw).is_absolute() or ".." in Path(raw).parts
+               for raw in raw_paths):
+            raise ConfigError(f"Invalid configuration {path}: knowledge paths must stay inside the project")
+        if not re.fullmatch(r"[a-zA-Z0-9_-]+", value["imported_subdir"]):
+            raise ConfigError(f"Invalid configuration {path}: imported_subdir must be one directory name")
     if name == "rag":
         if value["chunk_overlap"] >= value["chunk_chars"]:
             raise ConfigError(f"Invalid configuration {path}: chunk_overlap must be below chunk_chars")
