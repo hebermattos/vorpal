@@ -141,6 +141,14 @@ def validate_config(name, value):
         local_paths.extend(profile[key] for profile in value["profiles"] for key in ("corpus", "out"))
         if any(Path(raw).is_absolute() or ".." in Path(raw).parts for raw in local_paths):
             raise ConfigError(f"Invalid configuration {path}: web paths must stay inside the project")
+    if name == "rag":
+        if value["chunk_overlap"] >= value["chunk_chars"]:
+            raise ConfigError(f"Invalid configuration {path}: chunk_overlap must be below chunk_chars")
+        if any(not raw.strip() for raw in (value["database"], value["corpus"], value["embedding_model"])):
+            raise ConfigError(f"Invalid configuration {path}: RAG paths must be non-empty")
+        if any(Path(raw).is_absolute() or ".." in Path(raw).parts
+               for raw in (value["database"], value["corpus"], value["embedding_model"])):
+            raise ConfigError(f"Invalid configuration {path}: RAG paths must stay inside the project")
     if name == "security_tools":
         identifiers = [entry["id"] for entry in value["templates"]]
         if not identifiers or len(set(identifiers)) != len(identifiers) or any(not re.fullmatch(r'[a-z0-9][a-z0-9_-]*', identifier) for identifier in identifiers):

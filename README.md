@@ -176,6 +176,50 @@ python src/generate.py --question "Como proteger minhas contas contra phishing?"
 
 Question mode has no conversation memory and requires relevant training data. See the [PT-BR experiment](docs/PT_BR_TRAINING.md) and [Wiki40B workflow](docs/WIKI40B_TRAINING.md) for language training and prepared datasets. There is currently no language profile in the shared registry.
 
+## Local retrieval (RAG)
+
+Vorpal can now index **existing UTF-8 corpus files and imported text** separately from
+training. SQLite FTS5 provides BM25 when available; builds without FTS5 use a
+portable Python BM25 fallback (slower on large corpora). The index does not
+change datasets, split histories, or checkpoints, and neither command executes
+network scans, downloads, or training.
+
+```bash
+# Index existing files using SQLite FTS5/BM25 (no extra packages)
+python src/rag.py index --corpus corpus/security
+
+# Search with source-relative paths, line numbers, SHA-256 and excerpts
+python src/rag.py search "Nmap TCP service identification"
+```
+
+Indexing is incremental: unchanged files are reused, modified documents are
+reindexed, and removed documents are deleted. Configure the index location,
+chunking, ranking and local embedding directory in `config/rag.json`.
+
+Optional **hybrid retrieval** adds CPU embeddings and reciprocal rank fusion
+(BM25 + cosine similarity), followed by lexical coverage reranking. Install the
+optional `sentence-transformers` package separately and place a compatible
+sentence-transformer model in the configured `embedding_model` directory before:
+
+```bash
+python src/rag.py index --corpus corpus/security --hybrid
+python src/rag.py search "detect exposed TCP services"
+```
+
+There is **no automatic model download**. Hybrid mode refuses to run without a
+local model. Indexes are tied to their embedding mode and model path; use a
+different `database` path in `config/rag.json` when switching modes or models.
+Deleting an old index is an explicit operator action. Indexing uses only the
+current selected corpus and drops documents no longer present in it.
+
+**Security boundary:** imported and retrieved text is untrusted. RAG results are
+evidence to be reviewed, not commands or policy instructions. The index applies
+the existing file-name/secret heuristics, but they cannot guarantee removal of
+secrets; use trusted sources and protect the local database. Retrieval does not
+authorize targets or bypass the separate deterministic command validator and
+human approval. This first stage provides retrieval and source metadata; it does
+not yet inject context into Keras generation or security-tool planning.
+
 ## Import data separately
 
 The importer accepts code, documents (including PDF/DOCX), structured text and ZIP/TAR.GZ archives:
