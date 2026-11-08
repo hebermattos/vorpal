@@ -76,16 +76,6 @@ def _connection(database):
             line INTEGER NOT NULL, body TEXT NOT NULL,
             FOREIGN KEY(source) REFERENCES documents(source) ON DELETE CASCADE
         );
-        CREATE VIRTUAL TABLE IF NOT EXISTS chunk_search USING fts5(
-            body, content='chunks', content_rowid='id'
-        );
-        CREATE TRIGGER IF NOT EXISTS chunk_ai AFTER INSERT ON chunks BEGIN
-            INSERT INTO chunk_search(rowid, body) VALUES (new.id, new.body);
-        END;
-        CREATE TRIGGER IF NOT EXISTS chunk_ad AFTER DELETE ON chunks BEGIN
-            INSERT INTO chunk_search(chunk_search, rowid, body)
-            VALUES ('delete', old.id, old.body);
-        END;
         CREATE TABLE IF NOT EXISTS vectors (
             chunk_id INTEGER PRIMARY KEY, embedding TEXT NOT NULL,
             FOREIGN KEY(chunk_id) REFERENCES chunks(id) ON DELETE CASCADE
@@ -94,7 +84,60 @@ def _connection(database):
             key TEXT PRIMARY KEY, value TEXT NOT NULL
         );
     """)
+    # Some Python/SQLite builds do not include the optional FTS5 extension.
+    # Keep ordinary SQLite storage usable on those platforms.
+    try:
+        db.executescript("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS chunk_search USING fts5(
+                body, content='chunks', content_rowid='id'
+            );
+            CREATE TRIGGER IF NOT EXISTS chunk_ai AFTER INSERT ON chunks BEGIN
+                INSERT INTO chunk_search(rowid, body) VALUES (new.id, new.body);
+            END;
+            CREATE TRIGGER IF NOT EXISTS chunk_ad AFTER DELETE ON chunks BEGIN
+                INSERT INTO chunk_search(chunk_search, rowid, body)
+                VALUES ('delete', old.id, old.body);
+            END;
+        """)
+        db.execute("SELECT count(*) FROM chunk_search").fetchone()
+    except sqlite3.OperationalError as exc:
+        if "no such module: fts5" not in str(exc).lower():
+            db.close()
+            raise
+        db.execute("DROP TRIGGER IF EXISTS chunk_ai")
+        db.execute("DROP TRIGGER IF EXISTS chunk_ad")
     return db
+
+
+def _has_fts5(db):
+    return bool(db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='chunk_search'"
+    ).fetchone())
+
+
+def _fallback_bm25(db, tokens, pool):
+    """Small-corpus BM25 without optional SQLite extensions or third-party modules."""
+    rows = [(ident, [token.casefold() for token in TOKEN.findall(body)])
+            for ident, body in db.execute("SELECT id,body FROM chunks")]
+    if not rows:
+        return []
+    terms = set(token.casefold() for token in tokens[:32])
+    length_avg = sum(len(words) for _, words in rows) / len(rows)
+    df = {term: sum(term in words for _, words in rows) for term in terms}
+    scored = []
+    for ident, words in rows:
+        score = 0.0
+        for term in terms:
+            count = words.count(term)
+            if not count:
+                continue
+            idf = math.log(1 + (len(rows) - df[term] + 0.5) / (df[term] + 0.5))
+            score += idf * count * 2.2 / (
+                count + 1.2 * (0.25 + 0.75 * len(words) / max(length_avg, 1))
+            )
+        if score:
+            scored.append((ident, -score))
+    return sorted(scored, key=lambda item: (item[1], item[0]))[:pool]
 
 
 def _candidates(root, database, settings):
@@ -205,10 +248,13 @@ def search(question, database=None, *, settings=None, limit=None):
         # Quote each token: query syntax is never interpreted as user-controlled FTS operators.
         match = " OR ".join('"' + word.replace('"', '""') + '"' for word in identifiers[:32])
         pool = max(limit * settings["candidate_multiplier"], limit)
-        lexical = db.execute(
-            "SELECT c.id, bm25(chunk_search) AS score FROM chunk_search "
-            "JOIN chunks c ON c.id=chunk_search.rowid WHERE chunk_search MATCH ? "
-            "ORDER BY score LIMIT ?", (match, pool)).fetchall()
+        if _has_fts5(db):
+            lexical = db.execute(
+                "SELECT c.id, bm25(chunk_search) AS score FROM chunk_search "
+                "JOIN chunks c ON c.id=chunk_search.rowid WHERE chunk_search MATCH ? "
+                "ORDER BY score LIMIT ?", (match, pool)).fetchall()
+        else:
+            lexical = _fallback_bm25(db, identifiers, pool)
         ranks = {}
         for rank, (ident, _) in enumerate(lexical, 1):
             ranks[ident] = ranks.get(ident, 0.0) + 1 / (settings["rrf_k"] + rank)
