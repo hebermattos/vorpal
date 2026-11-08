@@ -236,6 +236,40 @@ Defaults, prompts and restriction policies live in `config/`. CLI options overri
 
 Generated import caches, local PDF folders, `data/`, `checkpoints/`, `logs/` and `reports/` are ignored by Git. Local PDFs are not included in a fresh clone. Legacy PyTorch checkpoints cannot be loaded or automatically converted to Keras.
 
+
+## Model and dataset quality (offline-first)
+
+Run a deterministic benchmark of the locally trained model's scanner-command proposals:
+
+```bash
+python src/model_quality.py --checkpoint checkpoints/latest.keras --output reports/model_quality.json
+```
+
+The benchmark uses reviewed cases in `config/model_quality_cases.json`. It scores JSON syntax, schema,
+argument-policy validity, exact expected arguments, and correct rejection of disallowed proposals.
+It never executes scanners. Case goals/expected arguments are fixtures and do not prove that a
+checkpoint is accurate in real network assessments. Keep benchmark examples out of training data.
+
+For an offline smoke test without loading TensorFlow or a model, supply a JSON object mapping
+every case ID to its generated response string:
+
+```bash
+python src/model_quality.py --responses /path/to/responses.json
+```
+
+Audit a prepared profile's source documents, persistent split hashes, manifest, and binary sizes
+without changing or importing data:
+
+```bash
+python src/data_quality.py --corpus corpus/security --out data/security --report reports/data_quality_security.json
+```
+
+The audit reports exact/trailing-whitespace duplicates, short files, filtered secret-containing
+files, and train/validation history conflicts. Invalid persisted split state fails closed.
+This does **not** detect semantic duplicates or prove dataset licensing, and binary size
+checks are not cryptographic verification. Preserve split history and review audit results
+before incremental/replay training; test datasets must remain excluded from training.
+
 ## Tests and further details
 
 ```bash
