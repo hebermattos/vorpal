@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import scan_intelligence as si
+import rag
 
 
 NMAP = b'''<?xml version="1.0"?>
@@ -26,6 +27,19 @@ class ScanIntelligenceTests(unittest.TestCase):
         self.xml = Path(self.tmp.name) / "scan.xml"
         self.xml.write_bytes(NMAP)
         self.target = "192.168.1.10"
+        self.corpus = Path(self.tmp.name) / "corpus"
+        self.corpus.mkdir()
+        (self.corpus / "nginx.md").write_text(
+            "HTTP nginx 1.18 server version checks are evidence, not proof of vulnerabilities.\n"
+            "Verify configurations with safe, reviewed tools.\n", encoding="utf-8")
+        self.db = Path(self.tmp.name) / "rag.sqlite3"
+        rag.index(self.corpus, self.db)
+        load = si.load_config
+        patcher = patch.object(
+            si, "load_config",
+            side_effect=lambda name: {"database": str(self.db)} if name == "rag" else load(name))
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def model(self, content, seen=None):
         def reply(messages, settings):
@@ -62,11 +76,11 @@ class ScanIntelligenceTests(unittest.TestCase):
 
     def test_returns_review_only_hypotheses_and_validated_check(self):
         messages = []
-        response = {"hypotheses": [{"description": "Review HTTP headers.", "sources": []}],
+        response = {"hypotheses": [{"description": "Review HTTP headers.", "sources": [1]}],
                     "checks": [{"tool": "nmap", "args": ["-sT", "-sV", "-p", "80"],
                                 "reason": "Confirm the HTTP service version."}]}
         report = si.analyze(self.target, nmap_xml=self.xml, authorized=True,
-                            database=Path(self.tmp.name) / "no-index.sqlite3",
+                            database=self.db,
                             client=self.model(response, messages))
         self.assertEqual(report["observations"]["open_tcp"][0]["port"], 80)
         self.assertFalse(report["hypotheses"][0]["confirmed"])
@@ -91,6 +105,26 @@ class ScanIntelligenceTests(unittest.TestCase):
         with patch.object(si, "_local_chat", return_value=json.dumps(output)) as mocked:
             si.analyze(self.target, nmap_xml=self.xml, authorized=True)
             mocked.assert_called_once()
+
+    def test_missing_or_empty_rag_fails_closed(self):
+        missing = Path(self.tmp.name) / "missing.sqlite3"
+        with self.assertRaisesRegex(si.AnalysisError, "RAG index is required"):
+            si.analyze(self.target, nmap_xml=self.xml, authorized=True,
+                       database=missing, client=self.model({}))
+        with patch.object(si.rag, "search", return_value=[]):
+            with self.assertRaisesRegex(si.AnalysisError, "no relevant documents"):
+                si.analyze(self.target, nmap_xml=self.xml, authorized=True,
+                           database=self.db, client=self.model({}))
+
+    def test_hypothesis_requires_valid_document_evidence(self):
+        response = {"hypotheses": [{"description": "Unverified.", "sources": []}], "checks": []}
+        with self.assertRaises(si.AnalysisError):
+            si.analyze(self.target, nmap_xml=self.xml, authorized=True,
+                       database=self.db, client=self.model(response))
+        response["hypotheses"][0]["sources"] = [True]
+        with self.assertRaises(si.AnalysisError):
+            si.analyze(self.target, nmap_xml=self.xml, authorized=True,
+                       database=self.db, client=self.model(response))
 
     def test_input_limits_and_symlinks(self):
         symlink = Path(self.tmp.name) / "link.xml"
