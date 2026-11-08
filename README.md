@@ -31,68 +31,86 @@ training/evaluation/generation commands later, install
 `python -m pip install -r requirements-training.txt`. The optional
 `requirements-tfds.txt` includes those training dependencies as well.
 
-## Default analysis: local Llama + RAG
+## Default analysis: Ollama + RAG
 
-The normal workflow is **saved scanner output → RAG evidence → local Llama → review-only report**. Llama and the embedding model (if used) are different models. No training or cloud inference is required.
-
-1. Install `llama.cpp` separately (build or install its `llama-server` executable) and obtain a **compatible, licensed, pretrained Llama Instruct GGUF file** from a source you trust. Review RAM/CPU requirements; the 8 GB guideline above applies to the small *experimental Keras model*, not necessarily to your GGUF.
-2. Start the Llama server using the actual path to your GGUF file. The alias `local` must match `config/scan_intelligence.json`:
-
-```bash
-llama-server \
-  -m /path/to/your-instruct-model.gguf \
-  --alias local \
-  --host 127.0.0.1 \
-  --port 8080
-```
-
-Alternatively, install [Ollama](https://ollama.com/download) and start its
-[OpenAI-compatible local server](https://docs.ollama.com/api/openai-compatibility):
+The two primary workflows are **authorized IP evidence → RAG → Ollama → security
+advice** and **conversation → RAG → Ollama → cited answer**. Neither requires a
+Keras checkpoint. Run the existing setup script or start Ollama separately:
 
 ```bash
+bash scripts/setup_ollama_rag.sh --import-sources
+# If Ollama is not already running:
 python src/run_ollama.py
 ```
 
-The launcher reads the port from `config/scan_intelligence.json` and binds only
-to `127.0.0.1` (default `8080`), overriding an inherited `OLLAMA_HOST`. Run it
-instead of `llama-server` on that port. Stop it with **Ctrl+C**; server logs are
-shown in the terminal. It does not install Ollama or download models.
+`config/scan_intelligence.json` selects `host`, `port` and `model`. Defaults are
+`qwen2.5-coder:3b` and `127.0.0.1:11434`. The setup script reuses an installed
+model or downloads it. `config/assistant.json` stores the chat prompt, connection
+limits, history bounds and log location. All inference goes to loopback with
+proxies and redirects disabled. llama.cpp remains compatible when its port and
+model alias match that configuration.
 
-In a second terminal, use the same endpoint to list installed models:
-
-```bash
-OLLAMA_HOST=127.0.0.1:8080 ollama list
-```
-
-Set `model` in `config/scan_intelligence.json` to an installed local Instruct
-model's exact name, or copy that model to the default alias with
-`OLLAMA_HOST=127.0.0.1:8080 ollama cp YOUR_INSTALLED_MODEL local` (replace
-`YOUR_INSTALLED_MODEL` with its name). If no model is installed, explicitly
-download your chosen model with `ollama pull` using the same `OLLAMA_HOST`.
-Use the configured port in these commands if you change it. An Ollama service
-already listening on its usual port `11434` is a separate endpoint.
-
-3. From the repository root, update RAG using your **reviewed local documentation**. This indexes the *entire* `corpus/` tree into the configured default database, without importing URLs:
+### Analyze an authorized IP
 
 ```bash
-python vorpal.py knowledge update
+python vorpal.py analyze --target 192.168.1.10 --authorized --ports 22,80,443
+# The positional shortcut uses the same Ollama + RAG path:
+python vorpal.py 192.168.1.10 --authorized --ports 22,80,443
 ```
 
-4. Analyze an **existing Nmap XML** file containing the exact authorized private IPv4 target:
+The command accepts one local IPv4 address, makes bounded TCP connections, and
+reads passive banners without sending probes or exploits. Selected ports come
+from `config/local_vuln_scan.json` when `--ports` is omitted. A port-based service
+name is only a hint; an open port or banner does not establish a vulnerability.
+Closed and unreachable ports are grouped because a failed connection does not
+reliably distinguish them. The model receives observations and retrieved
+references, then supplies unverified findings and defensive advice. It does not
+execute suggested commands. The JSON report includes source paths, lines and
+hashes and is saved under `logs/assistant/analysis_<report-id>.json`, including
+collected evidence if inference fails. Use `--output` for an additional copy.
+
+For richer service/version evidence, the separate saved-report analyzer remains
+available (it does not perform scans):
 
 ```bash
-python src/scan_intelligence.py \
-  --target 192.168.1.10 \
-  --authorized \
-  --nmap-xml reports/nmap.xml \
-  --output reports/scan_analysis.json
+python src/scan_intelligence.py --target 192.168.1.10 --authorized \
+  --nmap-xml /path/to/existing/nmap.xml --output reports/scan_analysis.json
 ```
 
-You can additionally supply `--nuclei-jsonl reports/nuclei.jsonl`. The analysis module does **not** perform scans. It requires an existing RAG database and at least one relevant retrieved document. If retrieval is empty, it stops rather than silently running without RAG.
+### Security advice chatbot
 
-The server endpoint is fixed to `127.0.0.1`; proxies and redirects are disabled. The report contains scanner observations, referenced documents (source path, line and SHA-256), *unverified* hypotheses and suggested follow-up checks. Each hypothesis must cite a retrieved document ID, but a valid ID **does not prove** that the cited text supports the claim. Follow-up arguments are validated by the deterministic Nmap/Nuclei policy and are **never automatically executed**. Human review is mandatory.
+```bash
+python vorpal.py chat
+# One answer, printed as JSON:
+python vorpal.py chat --message "How can I secure SSH access?"
+# Follow up using IDs returned by earlier commands:
+python vorpal.py chat --session-id SESSION_ID --message "What about SSH keys?"
+python vorpal.py chat --report-id REPORT_ID --message "How should I secure this host?"
+```
 
-**Troubleshooting:** If the server is unavailable, confirm `llama-server` is running on port 8080 and the configured model alias is `local`. If RAG is missing or empty, review the documents under `corpus/` and re-run `python vorpal.py knowledge update`. If the model returns invalid JSON, the analysis rejects it; use a compatible Instruct model and review its output. Do not treat model text or retrieved documents as trusted instructions.
+Interactive chat ends with `/exit` or Ctrl+C. A bounded conversation history is
+kept locally under `logs/assistant/chat_<session-id>.json`; report conversations
+include the collected observations without making further target connections.
+Answers expose the current documentation source IDs, paths, line numbers and
+SHA-256 hashes. Those citations identify references; they do not prove the
+model's claims. An absent/empty RAG index, unavailable model, malformed JSON or
+invalid source IDs stops the request with a clear error. Use `--rag-db` on chat
+or analysis commands to select a non-default index.
+
+### Dashboard
+
+```bash
+python src/web.py
+```
+
+Open `http://127.0.0.1:8765/#assistant`. **Security assistant** is the initial
+view. It provides the authorized IP form, chat, **Discuss this report in chat**,
+and **Update RAG knowledge** with an optional source-import checkbox. Analysis
+runs as a cancellable background job. Chat uses the same backend as the CLI and
+retains the conversation until **New chat** or a page reload. Requests retain the
+existing same-origin and session-token protections; model text is rendered as
+plain text. Legacy Keras generation/training panels remain separate. The old
+scanner is explicitly available as `python vorpal.py legacy-scan --help`.
 
 ## Knowledge updates (no model training)
 

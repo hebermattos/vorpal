@@ -1,9 +1,10 @@
 {
-  "port": 8080,
-  "model": "local",
+  "host": "127.0.0.1",
+  "port": 11434,
+  "model": "qwen2.5-coder:3b",
   "temperature": 0.1,
   "max_tokens": 700,
-  "timeout_seconds": 90,
+  "timeout_seconds": 240,
   "max_response_bytes": 60000,
   "max_input_bytes": 3000000,
   "max_findings": 40,

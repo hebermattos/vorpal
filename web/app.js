@@ -3,7 +3,15 @@
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const views = {overview: 'Overview', generate: 'Ask / generate', train: 'Training', dataset: 'Dataset', evaluate: 'Evaluation', tools: 'Tools', settings: 'Settings'};
+views.assistant = 'Security assistant';
+views.generate = 'Legacy Keras generation';
 const actions = {generate: 'Model response', train: 'Training', evaluate: 'Model evaluation', benchmark: 'Code benchmark', prepare: 'Dataset preparation', import: 'Source import', tool_plan: 'Command planning', tool_run: 'Tool execution'};
+actions.analyze_ip = 'IP security analysis';
+actions.knowledge_update = 'RAG knowledge update';
+let chatSession = null;
+let chatReport = null;
+let completedAnalysis = null;
+let chatBusy = false;
 const statuses = {running: 'Running', completed: 'Completed', failed: 'Failed', cancelled: 'Cancelled', interrupted: 'Server stopped'};
 const actionIcons = {generate: 'code', train: 'train', evaluate: 'check', benchmark: 'check', prepare: 'data', import: 'folder'};
 let state = null;
@@ -69,7 +77,7 @@ async function api(path, options = {}) {
 function tag(label, kind = 'neutral') { return element('span', `mini-pill ${kind}`, label); }
 function currentView() {
   const name = location.hash.slice(1);
-  return Object.hasOwn(views, name) ? name : 'overview';
+  return Object.hasOwn(views, name) ? name : 'assistant';
 }
 function navigate() {
   const view = currentView();
@@ -399,6 +407,19 @@ async function updateJob(scroll = false) {
     }
     renderBusy();
     if (scroll && job.action !== 'generate') panel.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    if (job.action === 'analyze_ip') {
+      completedAnalysis = null;
+      $('#discuss-analysis').disabled = true;
+      text('#ip-analysis-result', job.output || 'Collecting evidence and retrieving documentation…');
+      if (job.status === 'completed') {
+        try {
+          const report = JSON.parse(job.output);
+          completedAnalysis = report.report_id;
+          text('#ip-analysis-result', `${report.answer}\n\nObserved open ports: ${report.observations.open_tcp.map(p => p.port).join(', ') || 'none'}\n\n${report.sources.map(s => `[${s.id}] ${s.source}:${s.line}`).join('\n')}\n\nReport ID: ${report.report_id}`);
+          $('#discuss-analysis').disabled = false;
+        } catch { /* Full job output remains available for diagnosis. */ }
+      }
+    }
   } catch (error) { toast(error.message, true); }
 }
 async function refresh() {
@@ -526,6 +547,49 @@ async function poll() {
   await refresh();
   setTimeout(poll, state?.poll_ms || 1500);
 }
+$('#ip-analysis-form').addEventListener('submit', event => {
+  event.preventDefault();
+  completedAnalysis = null;
+  $('#discuss-analysis').disabled = true;
+  startJob('analyze_ip', {target: $('#analysis-target').value.trim(),
+    ports: $('#analysis-ports').value.trim(), authorized: $('#analysis-authorized').checked});
+});
+$('#assistant-update-knowledge').addEventListener('click', () => startJob('knowledge_update', {
+  import_sources: $('#assistant-import-sources').checked
+}));
+function newSecurityConversation(report = null) {
+  if (chatBusy) return;
+  chatSession = null;
+  chatReport = report;
+  $('#security-conversation').replaceChildren();
+  text('#chat-status', '');
+  text('#chat-context', report ? `Discussing analysis ${report}. Chat makes no further target connections.` : 'General security advice. No target connections are made by chat.');
+}
+$('#new-conversation').addEventListener('click', () => newSecurityConversation());
+$('#discuss-analysis').addEventListener('click', () => {
+  newSecurityConversation(completedAnalysis);
+  $('#security-message').focus();
+});
+$('#security-chat-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (chatBusy) return;
+  const message = $('#security-message').value.trim();
+  if (!message) return;
+  chatBusy = true;
+  $('#send-security-message').disabled = true;
+  text('#chat-status', 'Retrieving references and waiting for Ollama…');
+  try {
+    const result = await api('/api/chat', {method: 'POST', body: JSON.stringify({message, session_id: chatSession, report_id: chatReport})});
+    chatSession = result.session_id;
+    const turn = element('article', 'assistant-turn');
+    turn.append(element('strong', null, 'You'), element('p', null, message), element('strong', null, 'Assistant'),
+      element('p', null, result.answer), element('p', 'field-note', result.sources.map(s => `[${s.id}] ${s.source}:${s.line}`).join('\n')));
+    $('#security-conversation').append(turn);
+    $('#security-message').value = '';
+    text('#chat-status', `Conversation ${chatSession}. Saved locally.`);
+  } catch (error) { text('#chat-status', error.message); }
+  finally { chatBusy = false; $('#send-security-message').disabled = false; }
+});
 navigate();
 renderBusy();
 poll();

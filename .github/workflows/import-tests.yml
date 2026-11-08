@@ -43,3 +43,5 @@ jobs:
           python -m unittest discover -s tests -p test_rag.py -v
           python -m unittest discover -s tests -p test_knowledge.py -v
           python -m unittest discover -s tests -p test_scan_intelligence.py -v
+          python -m unittest discover -s tests -p 'test_assistant*.py' -v
+          python -m unittest discover -s tests -p 'test_web*.py' -v

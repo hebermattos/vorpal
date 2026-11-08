@@ -22,7 +22,7 @@ def main(argv=None):
         executable = shutil.which("ollama")
         if executable is None:
             raise RuntimeError("Ollama is not installed or not on PATH. Install it from https://ollama.com/download.")
-        host = f'127.0.0.1:{settings["port"]}'
+        host = f'{settings.get("host", "127.0.0.1")}:{settings["port"]}'
         environment = dict(os.environ, OLLAMA_HOST=host)
         print(f"Starting Ollama at http://{host}; Vorpal model: {settings['model']}", flush=True)
         print(f"Manage models in another terminal with OLLAMA_HOST={host} ollama list", flush=True)

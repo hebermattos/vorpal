@@ -54,6 +54,28 @@ class WebApplicationTests(unittest.TestCase):
         self.assertEqual(command[command.index('--max-new') + 1], '16')
         self.assertIn('--checkpoint', command)
 
+    def test_ollama_ip_analysis_requires_authorization_without_keras(self):
+        (self.root / 'checkpoints/latest.keras').unlink()
+        with self.assertRaisesRegex(ValueError, 'authorization'):
+            self.app.command('analyze_ip', {'target': '127.0.0.1'})
+        command = self.app.command('analyze_ip', {'target': '127.0.0.1', 'authorized': True, 'ports': '22,80'})
+        self.assertIn('analyze', command)
+        self.assertIn('--authorized', command)
+        self.assertNotIn('--checkpoint', command)
+        with self.assertRaises(ValueError):
+            self.app.command('analyze_ip', {'target': '8.8.8.8', 'authorized': True})
+        self.assertEqual(self.app.command('knowledge_update', {'import_sources': True})[-1], '--import-sources')
+
+    def test_chat_busy_state_blocks_jobs_and_is_cleared_after_failure(self):
+        def fail(*args, **kwargs):
+            self.assertTrue(self.app.jobs.chat_active)
+            with self.assertRaises(BusyError):
+                self.app.start('prepare', {'profile': 'complete'})
+            raise ValueError('Local model unavailable')
+        with patch('assistant.chat', side_effect=fail), self.assertRaisesRegex(ValueError, 'unavailable'):
+            self.app.chat({'message': 'SSH security'})
+        self.assertFalse(self.app.jobs.chat_active)
+
     def test_security_question_uses_question_argument(self):
         question = 'Como proteger minhas contas?'
         command = self.app.command('generate', {'prompt': question, 'mode': 'security'})
@@ -204,6 +226,17 @@ class WebHTTPTests(unittest.TestCase):
         self.assertEqual(self.request('POST', '/api/jobs', '{}', {'Content-Type': 'application/json'})[0], 403)
         headers = {'Content-Type': 'application/json', 'X-Vorpal-Token': self.app.token, 'Origin': 'https://evil.example'}
         self.assertEqual(self.request('POST', '/api/jobs', '{}', headers)[0], 403)
+
+    def test_chat_api_uses_existing_origin_and_token_protection(self):
+        body = json.dumps({'message': 'SSH security', 'session_id': None})
+        self.assertEqual(self.request('POST', '/api/chat', body, {'Content-Type': 'application/json'})[0], 403)
+        headers = {'Content-Type': 'application/json', 'X-Vorpal-Token': self.app.token}
+        with patch('assistant.chat', return_value={'answer': 'Use keys [1].', 'sources': [], 'session_id': 'a' * 24}) as chat:
+            status, payload, _ = self.request('POST', '/api/chat', body, headers)
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(payload)['answer'], 'Use keys [1].')
+            self.assertEqual(chat.call_args.kwargs['root'], self.root)
+        self.assertEqual(self.request('POST', '/api/chat', json.dumps({'message': 'SSH', 'shell': True}), headers)[0], 400)
 
     def test_mutations_validate_json_and_ranges_before_starting_processes(self):
         headers = {'Content-Type': 'application/json', 'X-Vorpal-Token': self.app.token}
