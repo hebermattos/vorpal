@@ -1099,5 +1099,40 @@
         }
       }
     }
+  },
+  "model_quality_cases": {
+    "type": "object",
+    "properties": {
+      "cases": {
+        "type": "array",
+        "min_items": 1,
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "tool": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            },
+            "goal": {
+              "type": "string"
+            },
+            "expected": {
+              "type": "string"
+            },
+            "expected_args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }
