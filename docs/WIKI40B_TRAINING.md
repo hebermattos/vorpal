@@ -73,9 +73,12 @@ Back up `checkpoints/` before an experiment. For the language phase:
 python src/train.py --prepared --resume --data data/wiki40b/pt/train.bin --validation-data data/wiki40b/pt/valid.bin --steps 500 --batch 4 --threads 4
 ```
 
-`--prepared` explicitly bypasses source import, corpus preparation, split changes
-and consumed-document history updates. It requires `--data` and rejects `--reset`
-and `--replay`. Pass validation data explicitly; prepared mode does not silently
+`--prepared` bypasses source import, resplitting and consumed-document history
+updates. It requires `--data` and rejects `--reset` and `--replay`. Recognized
+prepared datasets are checked against the shared split registry before use.
+Vorpal verifies recorded checksums when available. Raw byte files without
+document metadata remain supported, and their document split must be verified
+by the operator. Pass validation data explicitly. Prepared mode does not silently
 use another corpus's `valid.bin`. `--resume` requires the existing checkpoint and
 matching architecture. These commands retain the current 512-byte context.
 

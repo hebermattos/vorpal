@@ -5,17 +5,27 @@ import json
 from pathlib import Path
 
 try:
-    from .data import _split_history, EXT, SKIP_DIRS, SKIP_NAME, is_internal_file, SETTINGS
+    from .data import (_split_history, configured_outputs, default_split_root, EXT,
+                       is_internal_file, SETTINGS, SKIP_DIRS, SKIP_NAME)
+    from .split_registry import shared_history
     from .content_safety import SECRET_CONTENT
 except ImportError:
-    from data import _split_history, EXT, SKIP_DIRS, SKIP_NAME, is_internal_file, SETTINGS
+    from data import (_split_history, configured_outputs, default_split_root, EXT,
+                      is_internal_file, SETTINGS, SKIP_DIRS, SKIP_NAME)
+    from split_registry import shared_history
     from content_safety import SECRET_CONTENT
 
 
-def audit(corpus, out):
+def audit(corpus, out, *, split_root=None):
     corpus, out = Path(corpus).resolve(), Path(out).resolve()
     train, valid = _split_history(out)
     findings = []
+    if split_root is not None:
+        root = Path(split_root).resolve()
+        try:
+            shared_history(root, configured_outputs(root, out))
+        except ValueError as exc:
+            findings.append(str(exc))
     seen = {}
     counts = {"eligible": 0, "short": 0, "secrets": 0, "duplicate": 0, "unreadable": 0}
     for path in sorted(corpus.rglob("*")):
@@ -73,7 +83,7 @@ def main(argv=None):
     parser.add_argument("--out", default="data")
     parser.add_argument("--report", default="reports/data_quality.json")
     args = parser.parse_args(argv)
-    report = audit(args.corpus, args.out)
+    report = audit(args.corpus, args.out, split_root=default_split_root())
     target = Path(args.report)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(report, indent=2), encoding="utf-8")
