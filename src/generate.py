@@ -24,8 +24,10 @@ def generate(
     max_new=SETTINGS["functions"]["generate"]["max_new"],
     temperature=SETTINGS["functions"]["generate"]["temperature"],
     seed=SETTINGS["functions"]["generate"]["seed"],
-    *, stop_on_json=False,
+    *, stop_on_json=False, json_mode=False,
 ):
+    if json_mode and not stop_on_json:
+        raise ValueError("json_mode requires stop_on_json")
     if not 0 < temperature <= 2:
         raise ValueError("temperature must be in (0,2]")
     context = model.get_layer("position_embedding").input_dim
@@ -35,6 +37,16 @@ def generate(
     for _ in range(max_new):
         batch = np.array([seq[-context:]], dtype=np.int32)
         logits = model(as_inputs(batch), training=False).numpy()[0, -1] / temperature
+        if json_mode:
+            # Constrain syntax-oriented planning to printable JSON bytes. The
+            # deterministic planner still validates complete JSON and all args.
+            allowed = np.zeros(256, dtype=bool)
+            if len(seq) == initial_length:
+                allowed[ord("{")] = True
+            else:
+                allowed[32:127] = True
+                allowed[[9, 10, 13]] = True
+            logits = np.where(allowed, logits, -1e9)
         probs = tf.nn.softmax(logits).numpy()
         seq.append(int(rng.choice(256, p=probs)))
         if stop_on_json and seq[-1] == ord('}'):

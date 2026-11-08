@@ -178,6 +178,10 @@ def save_model_atomic(model, path):
     os.replace(temporary, path)
 
 def run(args):
+    if getattr(args, "instruction_examples", None):
+        from instruction_train import train_instructions
+        return train_instructions(args, checkpoint=CHECKPOINT, metadata=METADATA,
+                                  train_settings=SETTINGS)
     prepared = getattr(args, "prepared", False)
     if prepared and (not args.data or getattr(args, "reset", False) or getattr(args, "replay", False)):
         raise ValueError("--prepared requires --data and cannot be combined with --reset or --replay")
@@ -310,6 +314,8 @@ def main():
     p.add_argument("--corpus", default=None)
     p.add_argument("--out", default=None)
     p.add_argument("--log-dir", default=SETTINGS["cli"]["log_dir"], help="Directory for timestamped training logs")
+    p.add_argument("--instruction-examples", default=None,
+                   help="Fine-tune the existing shared checkpoint on reviewed instruction JSONL; no corpus import.")
     p.add_argument("--data", default=None, help="Use this train file after importing and preparing the corpus")
     p.add_argument("--prepared", action="store_true",
                    help="Train existing --data bytes without importing, resplitting or updating corpus document history.")
