@@ -247,7 +247,7 @@ python src/train.py --instruction-examples examples/planner_instructions.jsonl -
 
 This mode requires the existing shared Keras checkpoint and matching architecture. It does
 not import source data, execute scanners, reset the model, or change existing binary datasets.
-It uses response-only loss masking (prompt/padding positions carry zero weight), and separately
+It uses response-only loss masking (prompt/padding positions carry zero weight), a\nconfigurable Nmap → Nuclei → mixed-tool curriculum with tool-balanced mixed sampling, and separately
 tracks consumed training examples at `data/instructions/training_state.json`. Use `--replay`
 to train previously consumed instruction examples again. `--reset` is not supported in
 instruction mode. Normal training and instruction training should not run concurrently.
@@ -259,6 +259,13 @@ are validated against the same deterministic planner policy. Validation/test rec
 context are rejected; the script never truncates training intent. This is a small teaching
 set, not a measured improvement in model quality. Keep functional benchmark fixtures
 separate from instruction training examples and benchmark the resulting checkpoint.
+The curriculum stages are validated in `config/instruction_train.json`; missing tool
+categories fall back to a balanced sample of available categories. The small
+reviewed example set is illustrative, and additional diverse reviewed examples
+are needed before expecting reliable generation. Constrained JSON generation
+forces an opening object and excludes control/non-ASCII bytes, but does not
+guarantee valid JSON; strict schema and safety-policy validation still reject
+invalid model responses.
 
 ## Tests and further details
 
