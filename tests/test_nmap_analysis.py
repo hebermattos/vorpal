@@ -20,7 +20,10 @@ class NmapAnalysisTests(unittest.TestCase):
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         corpus = self.root / 'corpus'; corpus.mkdir()
-        (corpus / 'security.txt').write_text('Network security hardening firewall SSH access requires reviewed configuration and key authentication.')
+        (corpus / 'security.txt').write_text(
+            'Network security hardening firewall SSH access requires reviewed configuration and key authentication. '
+            'Nmap identifies services on selected TCP ports and collects evidence for security configuration review. '
+            'HTTP access requires reviewing server configuration and transport security.')
         self.db = self.root / 'index.sqlite3'; rag.index(corpus, self.db)
 
     def analyze_reviewed(self, target, **kwargs):

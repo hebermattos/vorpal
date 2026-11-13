@@ -124,6 +124,7 @@ def update(*, corpus=None, database=None, import_sources=False, hybrid=None,
         "mode": stats["mode"],
         "import": imported,
         "changes": {"added": added, "updated": changed, "removed": removed},
+        "indexing": {key: stats[key] for key in ("retained", "deleted", "rejected", "failed")},
         "index": verification,
         "scan_started": False,
     }

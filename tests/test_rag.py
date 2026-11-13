@@ -91,10 +91,128 @@ class RagTests(unittest.TestCase):
             found = rag.search("nmap TCP", self.db, settings=self.settings)
         self.assertEqual(found[0]["source"], "nmap.txt")
 
+    def test_relevance_rejects_weak_lexical_and_stopword_only_matches(self):
+        rag.index(self.root, self.db, settings=self.settings)
+        for fts in (True, False):
+            with self.subTest(fts=fts), patch.object(rag, "_has_fts5", return_value=fts):
+                self.assertEqual(rag.search("the and for", self.db, settings=self.settings), [])
+                self.assertEqual(rag.search("nmap apples pears bananas oranges grapes",
+                                            self.db, settings=self.settings), [])
+                self.assertTrue(rag.search("How can I use Nmap?", self.db, settings=self.settings))
+
+    def test_hybrid_rank_alone_is_not_relevance(self):
+        with patch.object(rag, "_encoder", return_value=FakeEncoder()):
+            rag.index(self.root, self.db, settings=self.settings, hybrid=True)
+            self.assertEqual(rag.search("unrelatedword", self.db, settings=self.settings), [])
+            # Semantic retrieval remains available without lexical overlap.
+            encoder = FakeEncoder()
+            encoder.encode = lambda text, **kw: Vector([1.0, 0.0])
+            with patch.object(rag, "_encoder", return_value=encoder):
+                found = rag.search("networkmapper", self.db, settings=self.settings)
+            self.assertEqual([item['source'] for item in found], ['nmap.txt'])
+
+    def test_weak_and_nonfinite_semantic_matches_are_rejected(self):
+        encoder = FakeEncoder()
+        encoder.encode = lambda text, **kw: Vector([1.0, 0.0])
+        with patch.object(rag, '_encoder', return_value=encoder):
+            rag.index(self.root, self.db, settings=self.settings, hybrid=True)
+            for vector in ([0.4, 0.916515], [float('nan'), 1.0]):
+                encoder.encode = lambda text, **kw: Vector(vector)
+                with self.subTest(vector=vector):
+                    self.assertEqual(rag.search('unrelatedword', self.db, settings=self.settings), [])
+
+    def test_one_failed_source_does_not_block_other_updates(self):
+        rag.index(self.root, self.db, settings=self.settings)
+        (self.root / 'python.md').write_text('Python updated package isolation guide for virtual environments.\n')
+        original = Path.read_bytes
+        def read(path):
+            if path == self.root / 'nmap.txt':
+                raise OSError('temporary source failure')
+            return original(path)
+        with patch.object(Path, 'read_bytes', read):
+            result = rag.index(self.root, self.db, settings=self.settings)
+        self.assertEqual(result['retained'], ['nmap.txt'])
+        self.assertEqual(result['updated'], 1)
+        self.assertIn('updated', rag.search('Python', self.db, settings=self.settings)[0]['text'])
+
+    def test_newly_secret_bearing_content_evicts_old_chunks(self):
+        rag.index(self.root, self.db, settings=self.settings)
+        (self.root / 'nmap.txt').write_text('Nmap ADMIN_PASSWORD=this_is_not_safe_to_index\n')
+        result = rag.index(self.root, self.db, settings=self.settings)
+        self.assertEqual(result['rejected'], [{'source': 'nmap.txt', 'reason': 'secret_content'}])
+        self.assertEqual(result['removed'], 1)
+        self.assertEqual(rag.search('Nmap', self.db, settings=self.settings), [])
+
+    def test_read_failure_retains_hash_chunks_and_vectors_then_retries(self):
+        with patch.object(rag, "_encoder", return_value=FakeEncoder()):
+            rag.index(self.root, self.db, settings=self.settings, hybrid=True)
+            def snapshot():
+                with sqlite3.connect(self.db) as db:
+                    return [db.execute(sql).fetchall() for sql in (
+                        "SELECT * FROM documents ORDER BY source",
+                        "SELECT * FROM chunks ORDER BY id", "SELECT * FROM vectors ORDER BY chunk_id")]
+            before = snapshot()
+            path = self.root / 'nmap.txt'
+            path.write_text('Nmap updated guide for local TCP network services.\n')
+            original = Path.read_bytes
+            def read(candidate):
+                if candidate == path:
+                    raise PermissionError('temporary fixture failure')
+                return original(candidate)
+            with patch.object(Path, 'read_bytes', read):
+                result = rag.index(self.root, self.db, settings=self.settings, hybrid=True)
+            self.assertEqual(result['retained'], ['nmap.txt'])
+            self.assertEqual(result['removed'], 0)
+            self.assertEqual(result['documents'], 2)
+            self.assertEqual(result['failed'][0]['reason'], 'read_error')
+            self.assertEqual(snapshot(), before)
+            self.assertEqual(rag.index(self.root, self.db, settings=self.settings, hybrid=True)['updated'], 1)
+            self.assertNotEqual(snapshot(), before)
+
+    def test_stat_failure_preserves_existing_document(self):
+        rag.index(self.root, self.db, settings=self.settings)
+        original = Path.lstat
+        def lstat(candidate, *args, **kwargs):
+            if candidate == self.root / 'nmap.txt':
+                raise OSError('temporary metadata failure')
+            return original(candidate, *args, **kwargs)
+        with patch.object(Path, 'lstat', lstat):
+            result = rag.index(self.root, self.db, settings=self.settings)
+        self.assertEqual(result['retained'], ['nmap.txt'])
+        self.assertTrue(rag.search('Nmap', self.db, settings=self.settings))
+
+    def test_rejected_content_is_evicted_and_deletions_are_reported(self):
+        rag.index(self.root, self.db, settings=self.settings)
+        (self.root / 'nmap.txt').write_bytes(b'\xff invalid UTF-8')
+        (self.root / 'python.md').unlink()
+        result = rag.index(self.root, self.db, settings=self.settings)
+        self.assertEqual(result['removed'], 2)
+        self.assertEqual(result['deleted'], ['python.md'])
+        self.assertEqual(result['rejected'], [{'source': 'nmap.txt', 'reason': 'invalid_utf8'}])
+        self.assertEqual(result['retained'], [])
+        self.assertEqual(rag.search('Nmap', self.db, settings=self.settings), [])
+
+    def test_incomplete_directory_inventory_rolls_back(self):
+        rag.index(self.root, self.db, settings=self.settings)
+        (self.root / 'nmap.txt').write_text('Changed Nmap text that must be rolled back.\n')
+        def walk(root, *, followlinks, onerror):
+            yield str(root), [], ['nmap.txt']
+            onerror(PermissionError('cannot list subtree'))
+        with patch.object(rag.os, 'walk', walk), self.assertRaisesRegex(OSError, 'Cannot enumerate corpus'):
+            rag.index(self.root, self.db, settings=self.settings)
+        self.assertIn('identifies', rag.search('Nmap', self.db, settings=self.settings)[0]['text'])
+        self.assertTrue(rag.search('Python', self.db, settings=self.settings))
+
     def test_config_validation(self):
         config = dict(rag.SETTINGS, chunk_overlap=1000)
         with self.assertRaises(ConfigError):
             validate_config("rag", config)
+        for key, value in [('min_lexical_coverage', 0), ('min_lexical_coverage', 1.1),
+                           ('min_semantic_similarity', float('nan')),
+                           ('min_semantic_similarity', True), ('stop_words', [False])]:
+            config = dict(rag.SETTINGS, relevance=dict(rag.SETTINGS['relevance'], **{key: value}))
+            with self.subTest(key=key, value=value), self.assertRaises(ConfigError):
+                validate_config('rag', config)
         config = dict(rag.SETTINGS, database="../outside.sqlite3")
         with self.assertRaises(ConfigError):
             validate_config("rag", config)

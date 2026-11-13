@@ -75,7 +75,9 @@ def answer(message, history=(), *, database=None, observations=None, client=None
         for item in observations.get('open_tcp', []):
             evidence_terms.extend(str(item.get(key, '')) for key in ('port', 'service_hint', 'product', 'version'))
     evidence_query = ' '.join(evidence_terms)[:model_settings['max_query_chars'] // 2]
-    query = evidence_query + ' ' + message
+    # The analysis prompt describes output formatting, not the observed service.
+    # Including it can both dilute relevant evidence and match unrelated guides.
+    query = evidence_query if evidence_query and message == settings['analysis_question'] else evidence_query + ' ' + message
     query += ' ' + ' '.join(turn['user'] for turn in history[-2:])
     docs = rag.search(query[:model_settings['max_query_chars']], path, limit=model_settings['rag_results'])
     if not docs:

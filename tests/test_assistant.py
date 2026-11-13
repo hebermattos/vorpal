@@ -42,6 +42,40 @@ class AssistantTests(unittest.TestCase):
             assistant.answer('unmatchableword', database=self.db, client=model)
         model.assert_not_called()
 
+    def test_unrelated_hybrid_candidates_never_call_model(self):
+        class Encoder:
+            def encode(self, text, **kwargs):
+                class Vector(list):
+                    def tolist(self):
+                        return list(self)
+                return Vector([0.0, 1.0] if 'xylophone' in text else [1.0, 0.0])
+        corpus = self.root / 'corpus'
+        database = self.root / 'hybrid.sqlite3'
+        model = MagicMock()
+        with patch.object(rag, '_encoder', return_value=Encoder()):
+            rag.index(corpus, database, hybrid=True)
+            with self.assertRaisesRegex(ValueError, 'no relevant documents'):
+                assistant.answer('xylophone', database=database, client=model)
+            with self.assertRaisesRegex(assistant.security_tools.ToolPlanError, 'no relevant tool documentation'):
+                assistant.security_tools.propose('nmap', '127.0.0.1', 'xylophone',
+                                                  database=database, client=model)
+            xml = self.root / 'saved.xml'
+            xml.write_text('<nmaprun><host><address addr="127.0.0.1" addrtype="ipv4"/>'
+                           '<ports><port protocol="tcp" portid="9999"><state state="open"/>'
+                           '<service name="xylophone"/></port></ports></host></nmaprun>')
+            with self.assertRaisesRegex(assistant.scan_intelligence.AnalysisError, 'no relevant documents'):
+                assistant.scan_intelligence.analyze('127.0.0.1', nmap_xml=xml, authorized=True,
+                                                    database=database, client=model)
+        model.assert_not_called()
+
+    def test_analysis_formatting_prompt_cannot_supply_relevance(self):
+        model = MagicMock()
+        observations = {'target': '127.0.0.1', 'open_tcp': [{'port': 9999, 'service_hint': 'xylophone'}]}
+        with self.assertRaisesRegex(ValueError, 'no relevant documents'):
+            assistant.answer(assistant.load_config('assistant')['analysis_question'],
+                             database=self.db, observations=observations, client=model)
+        model.assert_not_called()
+
     def test_invalid_model_output_and_citations_are_rejected(self):
         for result in ('not JSON', '[]', json.dumps({'answer': 'Advice', 'sources': [True]}),
                        json.dumps({'answer': 'Advice', 'sources': [999]}),

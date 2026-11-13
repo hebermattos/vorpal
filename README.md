@@ -45,6 +45,12 @@ Knowledge updates leave the model weights intact. See
 [source imports](docs/REFERENCE.md#knowledge-and-retrieval) and
 [optional hybrid retrieval](docs/REFERENCE.md#optional-hybrid-retrieval).
 
+Retrieval applies configurable minimum relevance checks. When no reference
+qualifies, chat, analysis and planning stop before calling the model. These
+checks are heuristics and do not establish that a reference supports a claim.
+Index updates preserve previously indexed content after temporary file-read
+failures and record those failures for retry on the next update.
+
 For the dashboard, run `python src/web.py` and open
 [Security assistant](http://127.0.0.1:8765/#assistant). Use `python vorpal.py chat`
 for an interactive terminal session.
