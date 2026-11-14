@@ -69,6 +69,30 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual(result["changes"]["added"], ["guide.md", "imported/cached.txt"])
         importer.assert_called_once()
 
+    def test_audit_distinguishes_retained_rejected_and_deleted_sources(self):
+        deleted = self.root / 'deleted.txt'
+        rejected = self.root / 'rejected.txt'
+        for path in (deleted, rejected):
+            path.write_text('A synthetic security guide with sufficient content for indexing.\n')
+        self.run_update()
+        deleted.unlink()
+        rejected.write_bytes(b'\xff')
+        original = Path.read_bytes
+        def read(path):
+            if path == self.document:
+                raise PermissionError('temporary read failure')
+            return original(path)
+        with patch.object(Path, 'read_bytes', read):
+            result = self.run_update()
+        self.assertEqual(result['index']['documents'], 1)
+        self.assertEqual(result['changes']['removed'], ['deleted.txt', 'rejected.txt'])
+        self.assertEqual(result['indexing']['retained'], ['guide.md'])
+        self.assertEqual(result['indexing']['deleted'], ['deleted.txt'])
+        self.assertEqual(result['indexing']['rejected'], [{'source': 'rejected.txt', 'reason': 'invalid_utf8'}])
+        persisted = json.loads((self.project / result['report']).read_text())
+        self.assertEqual(persisted['indexing'], result['indexing'])
+        self.assertEqual(self.run_update()['indexing']['retained'], [])
+
     def test_rejects_cross_corpus_index_reuse(self):
         self.run_update()
         other = self.project / "other"

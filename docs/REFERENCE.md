@@ -130,6 +130,37 @@ are removed from the index. The defaults are `corpus/` and
 `config/rag.json`. Use a separate index for each corpus root, and run one index
 writer at a time. Audit reports are saved under `logs/knowledge/`.
 
+File-read or metadata errors retain the last successfully indexed hash, chunks
+and vectors for that source; a subsequent update retries it. Other readable
+documents still update. Retained content may be stale. Invalid UTF-8, oversized,
+too-short, secret-bearing or policy-excluded content is rejected and its previous
+index entries are removed. A directory-enumeration failure cancels and rolls back
+the synchronization because an incomplete inventory cannot establish deletion.
+Knowledge audits include `indexing.retained`, `deleted`, `rejected` (with reasons)
+and `failed` (with errors). The existing `changes.removed` includes both deleted
+and rejected documents that previously existed in the index.
+
+Before returning references, retrieval applies `relevance` in `config/rag.json`:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `min_lexical_coverage` | `0.2` | Minimum fraction of distinct query terms found in a chunk, after configured stop words are removed |
+| `min_semantic_similarity` | `0.55` | Alternative minimum cosine similarity, available only in hybrid mode |
+| `stop_words` | English/Portuguese function words | Terms ignored for lexical matching and coverage |
+
+Both thresholds must be greater than zero and no greater than one. Coverage uses
+the first 32 query tokens, excluding configured stop words. A chunk must satisfy
+at least one threshold; rank-fusion scores alone never qualify it. Queries with
+no remaining terms return no references. Automatic per-port analysis retrieves
+using observed port/service/product/version fields rather than its formatting
+prompt. If no reference qualifies, existing CLI/UI chat, saved/live analysis and
+tool-planning error paths stop before inference; collected evidence is retained.
+These defaults are conservative heuristics tested with synthetic fixtures, not
+calibrated confidence probabilities. Tune them against reviewed queries for the
+chosen corpus and embedding model. Passing the gate does not verify a claim,
+service identification or vulnerability; semantic false matches and lexical
+coincidences remain possible.
+
 `--import-sources` opts into source imports before indexing. Files named `url`
 list direct sources. Files named `scraping` list public HTTP(S) crawl seeds.
 Crawling stays within each seed's origin and containing directory, using the

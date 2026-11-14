@@ -9,9 +9,11 @@ import argparse
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 import sqlite3
+import stat
 
 try:
     from .config import load_config
@@ -140,29 +142,51 @@ def _fallback_bm25(db, tokens, pool):
     return sorted(scored, key=lambda item: (item[1], item[0]))[:pool]
 
 
-def _candidates(root, database, settings):
+def _candidates(root, database, settings, audit=None):
     root = Path(root).resolve()
     if not root.is_dir():
         raise ValueError(f"Corpus directory does not exist: {root}")
     database = Path(database).resolve()
-    for path in sorted(root.rglob("*")):
-        if path.is_symlink() or not path.is_file() or path.resolve() == database:
-            continue
-        relative = path.relative_to(root)
-        if (path.suffix.lower() not in EXT or is_internal_file(path.name)
-                or SKIP_NAME.search(path.name) or
-                any(part in SKIP_DIRS for part in relative.parts[:-1])):
-            continue
-        if path.stat().st_size > settings["max_file_bytes"]:
-            continue
-        try:
-            raw = path.read_bytes()
-            text = raw.decode("utf-8")
-        except (OSError, UnicodeError):
-            continue
-        if len(text.strip()) < settings["min_text_length"] or SECRET_CONTENT.search(text):
-            continue
-        yield str(relative), _digest(raw), text
+    audit = audit if audit is not None else {"failed": [], "rejected": []}
+
+    def traversal_error(exc):
+        # An incomplete inventory cannot establish that an indexed source was deleted.
+        raise OSError(f"Cannot enumerate corpus; index update cancelled: {exc}") from exc
+
+    for directory, dirs, files in os.walk(root, followlinks=False, onerror=traversal_error):
+        dirs[:] = sorted(name for name in dirs if name not in SKIP_DIRS)
+        for name in sorted(files):
+            path = Path(directory) / name
+            source = str(path.relative_to(root))
+            reason = None
+            try:
+                info = path.lstat()
+                if not stat.S_ISREG(info.st_mode):
+                    reason = "not_regular_file"
+                elif (path.suffix.lower() not in EXT or is_internal_file(path.name)
+                      or SKIP_NAME.search(path.name) or path.resolve() == database):
+                    reason = "excluded_by_policy"
+                elif info.st_size > settings["max_file_bytes"]:
+                    reason = "file_too_large"
+                if reason is None:
+                    raw = path.read_bytes()
+                    if len(raw) > settings["max_file_bytes"]:
+                        reason = "file_too_large"
+                    else:
+                        text = raw.decode("utf-8")
+                        if len(text.strip()) < settings["min_text_length"]:
+                            reason = "insufficient_text"
+                        elif SECRET_CONTENT.search(text):
+                            reason = "secret_content"
+            except OSError as exc:
+                audit["failed"].append({"source": source, "reason": "read_error", "error": str(exc)})
+                continue
+            except UnicodeError:
+                reason = "invalid_utf8"
+            if reason:
+                audit["rejected"].append({"source": source, "reason": reason})
+                continue
+            yield source, _digest(raw), text
 
 
 def _encoder(settings):
@@ -190,8 +214,9 @@ def index(root, database=None, *, settings=None, hybrid=False):
             raise ValueError("Index embedding mode/model changed; use a new database path.")
         known = dict(db.execute("SELECT source, sha256 FROM documents"))
         seen, changed = set(), 0
+        audit = {"failed": [], "rejected": []}
         with db:
-            for source, sha, text in _candidates(root, database, settings):
+            for source, sha, text in _candidates(root, database, settings, audit):
                 seen.add(source)
                 if known.get(source) == sha:
                     continue
@@ -206,12 +231,16 @@ def index(root, database=None, *, settings=None, hybrid=False):
                         db.execute("INSERT INTO vectors VALUES (?,?)",
                                    (cursor.lastrowid, json.dumps(embedding.tolist())))
                 changed += 1
-            for source in known.keys() - seen:
+            retained = known.keys() & {item["source"] for item in audit["failed"]}
+            removed = known.keys() - seen - retained
+            for source in removed:
                 db.execute("DELETE FROM documents WHERE source=?", (source,))
             db.execute("INSERT OR REPLACE INTO metadata VALUES ('encoder',?)", (embedding_id,))
             db.execute("INSERT OR REPLACE INTO metadata VALUES ('root',?)", (str(root),))
-        return {"documents": len(seen), "updated": changed, "removed": len(known.keys() - seen),
-                "mode": "hybrid" if hybrid else "text"}
+        rejected = {item["source"] for item in audit["rejected"]}
+        return {"documents": len(seen | retained), "updated": changed, "removed": len(removed),
+                "mode": "hybrid" if hybrid else "text", "retained": sorted(retained),
+                "deleted": sorted(removed - rejected), **audit}
     finally:
         db.close()
 
@@ -245,8 +274,13 @@ def search(question, database=None, *, settings=None, limit=None):
         identifiers = TOKEN.findall(question)
         if not identifiers:
             return []
+        relevance = settings["relevance"]
+        stop_words = {word.casefold() for word in relevance["stop_words"]}
+        terms = {word.casefold() for word in identifiers[:32]} - stop_words
+        if not terms:
+            return []
         # Quote each token: query syntax is never interpreted as user-controlled FTS operators.
-        match = " OR ".join('"' + word.replace('"', '""') + '"' for word in identifiers[:32])
+        match = " OR ".join('"' + word.replace('"', '""') + '"' for word in sorted(terms))
         pool = max(limit * settings["candidate_multiplier"], limit)
         if _has_fts5(db):
             lexical = db.execute(
@@ -254,16 +288,18 @@ def search(question, database=None, *, settings=None, limit=None):
                 "JOIN chunks c ON c.id=chunk_search.rowid WHERE chunk_search MATCH ? "
                 "ORDER BY score LIMIT ?", (match, pool)).fetchall()
         else:
-            lexical = _fallback_bm25(db, identifiers, pool)
+            lexical = _fallback_bm25(db, sorted(terms), pool)
         ranks = {}
         for rank, (ident, _) in enumerate(lexical, 1):
             ranks[ident] = ranks.get(ident, 0.0) + 1 / (settings["rrf_k"] + rank)
+        similarities = {}
         if encoder_row[0]:
             encoder = _encoder(settings)
             query_vector = encoder.encode(question, normalize_embeddings=True).tolist()
             vector_scores = []
             for ident, payload in db.execute("SELECT chunk_id, embedding FROM vectors"):
                 score = _cosine(query_vector, json.loads(payload))
+                similarities[ident] = score
                 vector_scores.append((score, ident))
             vector_scores.sort(reverse=True)
             for rank, (_, ident) in enumerate(vector_scores[:pool], 1):
@@ -275,11 +311,16 @@ def search(question, database=None, *, settings=None, limit=None):
         rows = db.execute(
             f"SELECT c.id,c.source,c.line,c.body,d.sha256 FROM chunks c "
             f"JOIN documents d ON d.source=c.source WHERE c.id IN ({placeholders})", wanted)
-        terms = {token.casefold() for token in identifiers}
         results = []
         for ident, source, line, body, sha in rows:
             coverage = len(terms.intersection(token.casefold() for token in TOKEN.findall(body)))
-            score = ranks[ident] + settings["coverage_weight"] * coverage / len(terms)
+            coverage /= len(terms)
+            # Rank fusion is relative: even an unrelated document can rank first.
+            # Gate on absolute evidence signals before returning any references.
+            if not (coverage >= relevance["min_lexical_coverage"] or
+                    similarities.get(ident, -1.0) >= relevance["min_semantic_similarity"]):
+                continue
+            score = ranks[ident] + settings["coverage_weight"] * coverage
             results.append({"source": source, "line": line, "sha256": sha,
                             "text": body, "score": round(score, 8)})
         results.sort(key=lambda item: (-item["score"], item["source"], item["line"]))

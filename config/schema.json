@@ -407,6 +407,27 @@
         "type": "number",
         "minimum": 0,
         "maximum": 1
+      },
+      "relevance": {
+        "type": "object",
+        "properties": {
+          "min_lexical_coverage": {
+            "type": "number",
+            "exclusive_minimum": 0,
+            "maximum": 1
+          },
+          "min_semantic_similarity": {
+            "type": "number",
+            "exclusive_minimum": 0,
+            "maximum": 1
+          },
+          "stop_words": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       }
     }
   },
